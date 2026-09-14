@@ -34,6 +34,36 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<AuthSession> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final accessToken = _accessToken;
+    final tokenType = _tokenType;
+    if (accessToken == null || tokenType == null) {
+      throw const AuthFailure(
+        'Sua sessão não está disponível. Entre novamente para continuar.',
+      );
+    }
+
+    try {
+      final data = await _api.changePassword(
+        accessToken: accessToken,
+        tokenType: tokenType,
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      );
+      return await _activate(_AuthenticationPayload.fromJson(data));
+    } on DioException catch (error) {
+      throw AuthFailure(_passwordChangeMessageFor(error));
+    } on FormatException {
+      throw const AuthFailure(
+        'A senha foi alterada, mas não foi possível atualizar a sessão. Entre novamente.',
+      );
+    }
+  }
+
+  @override
   Future<AuthSession?> restoreSession() async {
     StoredAuthSession? stored;
     try {
@@ -139,6 +169,20 @@ class AuthRepositoryImpl implements AuthRepository {
     }
     if (status == 400) {
       return 'Revise os dados informados e tente novamente.';
+    }
+    if (status != null && status >= 500) {
+      return 'O serviço está indisponível no momento. Tente novamente em instantes.';
+    }
+    return 'Não foi possível conectar. Verifique sua internet e tente novamente.';
+  }
+
+  String _passwordChangeMessageFor(DioException error) {
+    final status = error.response?.statusCode;
+    if (status == 401) {
+      return 'A senha atual não confere. Revise e tente novamente.';
+    }
+    if (status == 400) {
+      return 'A nova senha precisa ter entre 12 e 72 caracteres.';
     }
     if (status != null && status >= 500) {
       return 'O serviço está indisponível no momento. Tente novamente em instantes.';

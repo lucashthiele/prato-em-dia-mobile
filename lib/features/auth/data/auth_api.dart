@@ -8,6 +8,13 @@ abstract interface class AuthRemoteDataSource {
 
   Future<Map<String, dynamic>> refresh({required String refreshToken});
 
+  Future<Map<String, dynamic>> changePassword({
+    required String accessToken,
+    required String tokenType,
+    required String currentPassword,
+    required String newPassword,
+  });
+
   Future<void> validateAccessToken({
     required String accessToken,
     required String tokenType,
@@ -54,6 +61,29 @@ class AuthApi implements AuthRemoteDataSource {
     final data = response.data;
     if (data == null) {
       throw const FormatException('Resposta de renovação vazia.');
+    }
+    return data;
+  }
+
+  @override
+  Future<Map<String, dynamic>> changePassword({
+    required String accessToken,
+    required String tokenType,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/api/v1/me/password',
+      data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+      options: Options(
+        contentType: Headers.jsonContentType,
+        headers: {'Authorization': '$tokenType $accessToken'},
+      ),
+    );
+
+    final data = response.data;
+    if (data == null) {
+      throw const FormatException('Resposta de alteração de senha vazia.');
     }
     return data;
   }

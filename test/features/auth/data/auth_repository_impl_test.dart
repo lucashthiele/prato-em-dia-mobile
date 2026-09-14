@@ -60,6 +60,25 @@ void main() {
       expect(store.wasCleared, isTrue);
     });
   });
+
+  test('changes the password and persists the rotated session', () async {
+    final api = _FakeAuthApi();
+    final store = _MemoryTokenStore(_storedSession(expiresIn: 300));
+    final repository = AuthRepositoryImpl(api, store);
+    await repository.restoreSession();
+
+    final session = await repository.changePassword(
+      currentPassword: 'senha-inicial',
+      newPassword: 'minha-nova-senha',
+    );
+
+    expect(api.lastAccessToken, 'stored-access');
+    expect(api.lastCurrentPassword, 'senha-inicial');
+    expect(api.lastNewPassword, 'minha-nova-senha');
+    expect(session.passwordChangeRequired, isFalse);
+    expect(store.value?.accessToken, 'new-access');
+    expect(store.value?.refreshToken, 'new-refresh');
+  });
 }
 
 StoredAuthSession _storedSession({required int expiresIn}) {
@@ -100,6 +119,22 @@ class _FakeAuthApi implements AuthRemoteDataSource {
   final bool refreshFails;
   int validateCalls = 0;
   int refreshCalls = 0;
+  String? lastAccessToken;
+  String? lastCurrentPassword;
+  String? lastNewPassword;
+
+  @override
+  Future<Map<String, dynamic>> changePassword({
+    required String accessToken,
+    required String tokenType,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    lastAccessToken = accessToken;
+    lastCurrentPassword = currentPassword;
+    lastNewPassword = newPassword;
+    return _newTokens;
+  }
 
   @override
   Future<Map<String, dynamic>> login({
