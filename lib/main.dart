@@ -5,11 +5,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'app/theme/app_theme.dart';
 import 'core/config/app_environment.dart';
+import 'core/design_system/widgets/app_gradient_background.dart';
 import 'features/auth/data/auth_api.dart';
 import 'features/auth/data/auth_repository_impl.dart';
 import 'features/auth/data/auth_token_store.dart';
 import 'features/auth/domain/auth_session.dart';
+import 'features/auth/presentation/cubit/change_password_cubit.dart';
 import 'features/auth/presentation/cubit/login_cubit.dart';
+import 'features/auth/presentation/pages/change_password_page.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 
 void main() {
@@ -25,6 +28,7 @@ class MainApp extends StatefulWidget {
 
 class _MainAppState extends State<MainApp> {
   AuthSession? _session;
+  String? _currentPasswordForMandatoryChange;
   bool _isBootstrapping = true;
 
   late final AuthRepositoryImpl _authRepository = AuthRepositoryImpl(
@@ -48,7 +52,11 @@ class _MainAppState extends State<MainApp> {
   }
 
   Future<void> _restoreSession() async {
-    final session = await _authRepository.restoreSession();
+    var session = await _authRepository.restoreSession();
+    if (session?.passwordChangeRequired ?? false) {
+      await _authRepository.logout();
+      session = null;
+    }
     if (!mounted) return;
     setState(() {
       _session = session;
@@ -57,6 +65,7 @@ class _MainAppState extends State<MainApp> {
   }
 
   Future<void> _logout() async {
+    _currentPasswordForMandatoryChange = null;
     await _authRepository.logout();
     if (mounted) setState(() => _session = null);
   }
@@ -75,9 +84,30 @@ class _MainAppState extends State<MainApp> {
           ? BlocProvider(
               create: (_) => LoginCubit(_authRepository),
               child: LoginPage(
-                onAuthenticated: (session) {
-                  setState(() => _session = session);
+                onAuthenticated: (session, currentPassword) {
+                  setState(() {
+                    _session = session;
+                    _currentPasswordForMandatoryChange =
+                        session.passwordChangeRequired ? currentPassword : null;
+                  });
                 },
+              ),
+            )
+          : _session!.passwordChangeRequired &&
+                _currentPasswordForMandatoryChange != null
+          ? BlocProvider(
+              create: (_) => ChangePasswordCubit(
+                _authRepository,
+                _currentPasswordForMandatoryChange!,
+              ),
+              child: ChangePasswordPage(
+                onPasswordChanged: (session) {
+                  setState(() {
+                    _session = session;
+                    _currentPasswordForMandatoryChange = null;
+                  });
+                },
+                onLogout: _logout,
               ),
             )
           : _AuthenticatedPlaceholder(session: _session!, onLogout: _logout),
@@ -93,18 +123,7 @@ class _SessionBootstrapPage extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              scheme.primaryContainer.withValues(alpha: 0.46),
-              Theme.of(context).scaffoldBackgroundColor,
-              scheme.tertiaryContainer.withValues(alpha: 0.28),
-            ],
-          ),
-        ),
+      body: AppGradientBackground(
         child: SafeArea(
           child: Center(
             child: Semantics(
@@ -175,8 +194,6 @@ class _AuthenticatedPlaceholderState extends State<_AuthenticatedPlaceholder> {
 
   @override
   Widget build(BuildContext context) {
-    final requiresPasswordChange = widget.session.passwordChangeRequired;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Prato em Dia')),
       body: SafeArea(
@@ -187,25 +204,19 @@ class _AuthenticatedPlaceholderState extends State<_AuthenticatedPlaceholder> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  requiresPasswordChange
-                      ? Icons.lock_reset_rounded
-                      : Icons.check_circle_rounded,
+                  Icons.check_circle_rounded,
                   size: 56,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  requiresPasswordChange
-                      ? 'Troca de senha necessária'
-                      : 'Acesso realizado com sucesso',
+                  'Acesso realizado com sucesso',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  requiresPasswordChange
-                      ? 'A conta usa uma senha inicial. O próximo passo será cadastrar uma senha pessoal.'
-                      : 'A sessão foi iniciada e está pronta para carregar o seu plano.',
+                  'A sessão foi iniciada e está pronta para carregar o seu plano.',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),

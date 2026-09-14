@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design_system/widgets/app_async_filled_button.dart';
+import '../../../../core/design_system/widgets/app_brand_mark.dart';
+import '../../../../core/design_system/widgets/app_error_banner.dart';
 import '../../domain/auth_session.dart';
 import '../cubit/login_cubit.dart';
 import '../cubit/login_state.dart';
+import '../widgets/auth_page_shell.dart';
+import '../widgets/auth_password_field.dart';
+
+typedef LoginAuthenticatedCallback = void Function(
+  AuthSession session,
+  String currentPassword,
+);
 
 class LoginPage extends StatefulWidget {
   const LoginPage({required this.onAuthenticated, super.key});
 
-  final ValueChanged<AuthSession> onAuthenticated;
+  final LoginAuthenticatedCallback onAuthenticated;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -19,8 +29,6 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _passwordFocusNode = FocusNode();
-  bool _obscurePassword = true;
-
   @override
   void dispose() {
     _emailController.dispose();
@@ -41,66 +49,9 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              scheme.primaryContainer.withValues(alpha: 0.46),
-              Theme.of(context).scaffoldBackgroundColor,
-              scheme.tertiaryContainer.withValues(alpha: 0.28),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 760;
-              final minContentHeight = constraints.maxHeight > 48
-                  ? constraints.maxHeight - 48
-                  : 0.0;
-
-              return SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isWide ? 48 : 24,
-                  vertical: 24,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: 1120,
-                      minHeight: minContentHeight,
-                    ),
-                    child: isWide
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              const Expanded(child: _WelcomePanel()),
-                              const SizedBox(width: 80),
-                              SizedBox(
-                                width: 420,
-                                child: _buildLoginContent(context),
-                              ),
-                            ],
-                          )
-                        : Align(
-                            alignment: Alignment.topCenter,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 480),
-                              child: _buildLoginContent(context),
-                            ),
-                          ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
+    return AuthPageShell(
+      widePanel: const _WelcomePanel(),
+      content: _buildLoginContent(context),
     );
   }
 
@@ -114,7 +65,9 @@ class _LoginPageState extends State<LoginPage> {
           current.status == LoginStatus.success,
       listener: (context, state) {
         final session = context.read<LoginCubit>().takeSession();
-        if (session != null) widget.onAuthenticated(session);
+        if (session != null) {
+          widget.onAuthenticated(session, _passwordController.text);
+        }
       },
       builder: (context, state) {
         return AutofillGroup(
@@ -123,7 +76,7 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _BrandMark(),
+                const AppBrandMark(),
                 const SizedBox(height: 48),
                 Text(
                   'Que bom ter você aqui',
@@ -138,7 +91,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 32),
                 if (state.errorMessage != null) ...[
-                  _ErrorBanner(message: state.errorMessage!),
+                  AppErrorBanner(message: state.errorMessage!),
                   const SizedBox(height: 20),
                 ],
                 TextFormField(
@@ -168,35 +121,14 @@ class _LoginPageState extends State<LoginPage> {
                   },
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
+                AuthPasswordField(
                   controller: _passwordController,
                   focusNode: _passwordFocusNode,
                   enabled: !state.isSubmitting,
-                  obscureText: _obscurePassword,
-                  keyboardType: TextInputType.visiblePassword,
+                  labelText: 'Senha',
+                  prefixIcon: Icons.lock_outline_rounded,
                   textInputAction: TextInputAction.done,
                   autofillHints: const [AutofillHints.password],
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    labelText: 'Senha',
-                    prefixIcon: const Icon(Icons.lock_outline_rounded),
-                    suffixIcon: IconButton(
-                      tooltip: _obscurePassword
-                          ? 'Mostrar senha'
-                          : 'Ocultar senha',
-                      onPressed: state.isSubmitting
-                          ? null
-                          : () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                      ),
-                    ),
-                  ),
                   onFieldSubmitted: (_) => _submit(),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -215,25 +147,11 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Semantics(
-                  button: true,
-                  label: state.isSubmitting ? 'Entrando, aguarde' : 'Entrar',
-                  child: FilledButton(
-                    onPressed: state.isSubmitting ? null : _submit,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      child: state.isSubmitting
-                          ? const SizedBox.square(
-                              key: ValueKey('loading'),
-                              dimension: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Entrar', key: ValueKey('label')),
-                    ),
-                  ),
+                AppAsyncFilledButton(
+                  label: 'Entrar',
+                  loadingLabel: 'Entrando, aguarde',
+                  isLoading: state.isSubmitting,
+                  onPressed: _submit,
                 ),
                 const SizedBox(height: 24),
                 Text(
@@ -268,43 +186,6 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _BrandMark extends StatelessWidget {
-  const _BrandMark();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Semantics(
-          label: 'Símbolo do Prato em Dia',
-          image: true,
-          child: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer,
-              borderRadius: BorderRadius.circular(17),
-            ),
-            child: Icon(
-              Icons.eco_rounded,
-              color: scheme.onPrimaryContainer,
-              size: 30,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          'Prato em Dia',
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.w800, color: scheme.onSurface),
-        ),
-      ],
     );
   }
 }
@@ -388,41 +269,6 @@ class _Benefit extends StatelessWidget {
           child: Text(label, style: Theme.of(context).textTheme.titleMedium),
         ),
       ],
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      liveRegion: true,
-      container: true,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: scheme.errorContainer,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.error_outline_rounded, color: scheme.onErrorContainer),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(color: scheme.onErrorContainer, height: 1.4),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
