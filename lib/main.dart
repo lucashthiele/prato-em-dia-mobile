@@ -14,6 +14,7 @@ import 'features/auth/presentation/cubit/change_password_cubit.dart';
 import 'features/auth/presentation/cubit/login_cubit.dart';
 import 'features/auth/presentation/pages/change_password_page.dart';
 import 'features/auth/presentation/pages/login_page.dart';
+import 'features/home/presentation/pages/today_page.dart';
 
 void main() {
   runApp(const MainApp());
@@ -110,7 +111,7 @@ class _MainAppState extends State<MainApp> {
                 onLogout: _logout,
               ),
             )
-          : _AuthenticatedPlaceholder(session: _session!, onLogout: _logout),
+          : TodayPage(onLogout: _logout),
     );
   }
 }
@@ -157,80 +158,6 @@ class _SessionBootstrapPage extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AuthenticatedPlaceholder extends StatefulWidget {
-  const _AuthenticatedPlaceholder({
-    required this.session,
-    required this.onLogout,
-  });
-
-  final AuthSession session;
-  final Future<void> Function() onLogout;
-
-  @override
-  State<_AuthenticatedPlaceholder> createState() =>
-      _AuthenticatedPlaceholderState();
-}
-
-class _AuthenticatedPlaceholderState extends State<_AuthenticatedPlaceholder> {
-  bool _isLoggingOut = false;
-
-  Future<void> _logout() async {
-    if (_isLoggingOut) return;
-    setState(() => _isLoggingOut = true);
-    try {
-      await widget.onLogout();
-    } finally {
-      if (mounted) setState(() => _isLoggingOut = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Prato em Dia')),
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.check_circle_rounded,
-                  size: 56,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Acesso realizado com sucesso',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'A sessão foi iniciada e está pronta para carregar o seu plano.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                FilledButton.tonalIcon(
-                  onPressed: _isLoggingOut ? null : _logout,
-                  icon: _isLoggingOut
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.logout_rounded),
-                  label: Text(_isLoggingOut ? 'Saindo...' : 'Sair'),
-                ),
-              ],
             ),
           ),
         ),
