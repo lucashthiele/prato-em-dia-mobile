@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="prato_em_dia_mobile"
+        android:label="Prato em Dia"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
