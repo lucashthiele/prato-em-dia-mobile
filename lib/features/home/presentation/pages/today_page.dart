@@ -1,460 +1,375 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
-/// The first authenticated experience.
-///
-/// Tracking endpoints are not available yet, so this page intentionally keeps
-/// the sample plan in memory. Its interaction and visual states mirror the
-/// future tracking flow without persisting a completion event locally.
+import '../../../../core/config/app_environment.dart';
+import '../../../auth/domain/auth_session.dart';
+import '../../data/today_api.dart';
+import '../../data/today_repository_impl.dart';
+import '../../domain/today_repository.dart';
+import '../cubit/today_cubit.dart';
+
+/// Today receives the active session and its existing renewal operation from
+/// the app shell. [repository] is optional for tests and feature composition.
 class TodayPage extends StatefulWidget {
-  const TodayPage({required this.onLogout, super.key});
+  const TodayPage({
+    required this.onLogout,
+    this.session,
+    this.renewSession,
+    this.repository,
+    super.key,
+  });
 
   final Future<void> Function() onLogout;
+  final AuthSession? session;
+  final Future<AuthSession?> Function()? renewSession;
+  final TodayRepository? repository;
 
   @override
   State<TodayPage> createState() => _TodayPageState();
 }
 
 class _TodayPageState extends State<TodayPage> {
-  final Set<String> _completedMealIds = {'cafe'};
-  bool _isLoggingOut = false;
+  late final TodayCubit _cubit;
+  bool _loggingOut = false;
 
-  static const _meals = [
-    _PlannedMeal(
-      id: 'cafe',
-      period: 'Café da manhã',
-      time: '07:30',
-      title: 'Omelete com tapioca',
-      details: '2 ovos, tapioca e mamão',
-      calories: 385,
-      protein: 28,
-      carbohydrates: 41,
-      fat: 18,
-      icon: Icons.wb_sunny_outlined,
-    ),
-    _PlannedMeal(
-      id: 'almoco',
-      period: 'Almoço',
-      time: '12:30',
-      title: 'Frango grelhado com arroz',
-      details: 'Frango, arroz integral e salada',
-      calories: 620,
-      protein: 48,
-      carbohydrates: 70,
-      fat: 20,
-      icon: Icons.restaurant_outlined,
-    ),
-    _PlannedMeal(
-      id: 'lanche',
-      period: 'Lanche da tarde',
-      time: '16:00',
-      title: 'Iogurte com frutas',
-      details: 'Iogurte natural, banana e aveia',
-      calories: 275,
-      protein: 14,
-      carbohydrates: 38,
-      fat: 7,
-      icon: Icons.local_cafe_outlined,
-    ),
-    _PlannedMeal(
-      id: 'jantar',
-      period: 'Jantar',
-      time: '20:00',
-      title: 'Sopa de legumes com carne',
-      details: 'Legumes, carne magra e torradas',
-      calories: 465,
-      protein: 36,
-      carbohydrates: 42,
-      fat: 16,
-      icon: Icons.dinner_dining_outlined,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _cubit = TodayCubit(
+      widget.repository ??
+          (widget.session == null || widget.renewSession == null
+              ? _UnavailableTodayRepository()
+              : TodayRepositoryImpl(
+                  TodayApi(
+                    Dio(
+                      BaseOptions(
+                        baseUrl: AppEnvironment.apiBaseUrl,
+                        connectTimeout: const Duration(seconds: 12),
+                        receiveTimeout: const Duration(seconds: 12),
+                        headers: const {'Accept': 'application/json'},
+                      ),
+                    ),
+                  ),
+                  widget.session!,
+                  widget.renewSession!,
+                )),
+    )..load();
+  }
 
-  int get _consumedCalories => _meals
-      .where((meal) => _completedMealIds.contains(meal.id))
-      .fold(0, (sum, meal) => sum + meal.calories);
-
-  int get _consumedProtein => _sumMacro((meal) => meal.protein);
-
-  int get _consumedCarbohydrates => _sumMacro((meal) => meal.carbohydrates);
-
-  int get _consumedFat => _sumMacro((meal) => meal.fat);
-
-  int _sumMacro(int Function(_PlannedMeal meal) macro) => _meals
-      .where((meal) => _completedMealIds.contains(meal.id))
-      .fold(0, (sum, meal) => sum + macro(meal));
+  @override
+  void dispose() {
+    _cubit.close();
+    super.dispose();
+  }
 
   Future<void> _logout() async {
-    if (_isLoggingOut) return;
-    setState(() => _isLoggingOut = true);
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
     try {
       await widget.onLogout();
     } finally {
-      if (mounted) setState(() => _isLoggingOut = false);
+      if (mounted) setState(() => _loggingOut = false);
     }
   }
 
-  Future<void> _confirmMeal(_PlannedMeal meal) async {
-    if (_completedMealIds.contains(meal.id)) return;
-    final confirmed = await showModalBottomSheet<bool>(
+  Future<void> _choose(TodayMeal meal) async {
+    final type = await showModalBottomSheet<CompletionType>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
+      builder: (context) => SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Confirmar refeição',
-                style: Theme.of(sheetContext).textTheme.headlineSmall,
+                'Registrar refeição',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              Text('Você realizou “${meal.title}” como foi planejado?'),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: () => Navigator.pop(sheetContext, true),
-                icon: const Icon(Icons.check_rounded),
-                label: const Text('Confirmar como planejada'),
+              Text(meal.name, style: Theme.of(context).textTheme.bodyLarge),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.pop(context, CompletionType.completed),
+                child: const Text('Realizada como planejada'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () =>
+                    Navigator.pop(context, CompletionType.notCompleted),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                child: const Text('Não realizada'),
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => Navigator.pop(sheetContext, false),
-                child: const Text('Agora não'),
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
               ),
             ],
           ),
         ),
       ),
     );
-    if (confirmed != true || !mounted) return;
-    setState(() => _completedMealIds.add(meal.id));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${meal.period} confirmada para hoje.')),
-    );
+    if (type == null || !mounted) return;
+    final saved = await _cubit.record(meal, type);
+    if (saved && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Registro salvo.')));
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final progress = _consumedCalories / 1745;
-    final date = _todayLabel(DateTime.now());
-
-    return Scaffold(
+  Widget build(BuildContext context) => BlocProvider.value(
+    value: _cubit,
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('Hoje'),
+        actions: [
+          IconButton(
+            tooltip: 'Sair da conta',
+            onPressed: _loggingOut ? null : _logout,
+            icon: _loggingOut
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.logout_outlined),
+          ),
+        ],
+      ),
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Olá, Marina',
-                              style: theme.textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(date, style: theme.textTheme.bodyMedium),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Sair da conta',
-                        onPressed: _isLoggingOut ? null : _logout,
-                        icon: _isLoggingOut
-                            ? const SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.logout_outlined),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  Semantics(
-                    label:
-                        'Consumo de hoje: $_consumedCalories de 1745 quilocalorias',
-                    child: _DailySummaryCard(
-                      calories: _consumedCalories,
-                      progress: progress.clamp(0, 1),
-                      protein: _consumedProtein,
-                      carbohydrates: _consumedCarbohydrates,
-                      fat: _consumedFat,
-                      scheme: scheme,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  Text('Sua programação', style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 4),
+        child: BlocBuilder<TodayCubit, TodayState>(
+          builder: (context, state) {
+            final data = state.data;
+            if (data == null && state.loading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (data == null) {
+              return _Status(
+                icon: Icons.wifi_off_outlined,
+                message:
+                    state.error ?? 'Não foi possível carregar as refeições.',
+                action: 'Tentar novamente',
+                onPressed: _cubit.load,
+              );
+            }
+            return RefreshIndicator(
+              onRefresh: _cubit.load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                children: [
                   Text(
-                    'Toque em uma refeição para registrar como foi seu dia.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 14),
-                  ..._meals.map(
-                    (meal) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _MealCard(
-                        meal: meal,
-                        isCompleted: _completedMealIds.contains(meal.id),
-                        onConfirm: () => _confirmMeal(meal),
-                      ),
-                    ),
+                    _todayLabel(DateTime.now()),
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
                   const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      'Plano demonstrativo · integração de tracking em breve',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
+                  Text(
+                    'Suas refeições planejadas para hoje',
+                    style: Theme.of(context).textTheme.bodyLarge,
                   ),
-                ]),
+                  if (state.loading) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
+                  if (state.error != null) ...[
+                    const SizedBox(height: 12),
+                    _Message(state.error!, onRetry: _cubit.load),
+                  ],
+                  if (state.mealError != null) ...[
+                    const SizedBox(height: 12),
+                    _Message(state.mealError!),
+                  ],
+                  const SizedBox(height: 20),
+                  if (data.meals.isEmpty)
+                    const _Status(
+                      icon: Icons.event_busy_outlined,
+                      message: 'Nenhuma refeição planejada para hoje.',
+                    )
+                  else
+                    ...data.meals.map((meal) {
+                      final event = data.latestEvents[meal.id];
+                      final saving = state.savingMealId == meal.id;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Card(
+                          margin: EdgeInsets.zero,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  _mealLabel(meal),
+                                  style: Theme.of(context).textTheme.labelLarge,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  meal.name,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${meal.itemCount} ${meal.itemCount == 1 ? 'item planejado' : 'itens planejados'}',
+                                ),
+                                const SizedBox(height: 12),
+                                if (event != null)
+                                  Text(
+                                    'Último registro: ${_eventLabel(event.type)}',
+                                  )
+                                else
+                                  const Text('Ainda não registrada'),
+                                const SizedBox(height: 8),
+                                OutlinedButton(
+                                  onPressed: state.savingMealId == null
+                                      ? () => _choose(meal)
+                                      : null,
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(48),
+                                  ),
+                                  child: saving
+                                      ? const SizedBox.square(
+                                          dimension: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : Text(
+                                          event == null
+                                              ? 'Registrar refeição'
+                                              : 'Registrar novamente',
+                                        ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                ],
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-class _DailySummaryCard extends StatelessWidget {
-  const _DailySummaryCard({
-    required this.calories,
-    required this.progress,
-    required this.protein,
-    required this.carbohydrates,
-    required this.fat,
-    required this.scheme,
-  });
-
-  final int calories;
-  final double progress;
-  final int protein;
-  final int carbohydrates;
-  final int fat;
-  final ColorScheme scheme;
+class _UnavailableTodayRepository implements TodayRepository {
+  @override
+  Future<TodayData> load(DateTime date) async => throw const TodayFailure(
+    'A sessão não está disponível. Entre novamente.',
+  );
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(24),
-      ),
+  Future<CompletionEvent> record(TodayMeal meal, CompletionType type) async =>
+      throw const TodayFailure(
+        'A sessão não está disponível. Entre novamente.',
+      );
+}
+
+class _Message extends StatelessWidget {
+  const _Message(this.message, {this.onRetry});
+
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: Theme.of(context).colorScheme.errorContainer,
+    child: Padding(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Consumo de hoje',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          RichText(
-            key: const Key('daily-calories'),
-            text: TextSpan(
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: scheme.onPrimaryContainer,
-                fontWeight: FontWeight.w800,
-              ),
-              children: [
-                TextSpan(text: '$calories '),
-                TextSpan(
-                  text: '/ 1.745 kcal',
-                  style: Theme.of(context).textTheme.titleMedium
-                      ?.copyWith(color: scheme.onPrimaryContainer),
-                ),
-              ],
+            message,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
             ),
           ),
-          const SizedBox(height: 14),
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 8,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _Macro(
-                  label: 'Proteínas',
-                  value: '$protein g',
-                  target: 'de 115 g',
-                ),
-              ),
-              Expanded(
-                child: _Macro(
-                  label: 'Carboidratos',
-                  value: '$carbohydrates g',
-                  target: 'de 190 g',
-                ),
-              ),
-              Expanded(
-                child: _Macro(
-                  label: 'Gorduras',
-                  value: '$fat g',
-                  target: 'de 58 g',
-                ),
-              ),
-            ],
-          ),
+          if (onRetry != null)
+            TextButton(
+              onPressed: onRetry,
+              child: const Text('Tentar novamente'),
+            ),
         ],
       ),
-    );
-  }
-}
-
-class _Macro extends StatelessWidget {
-  const _Macro({
-    required this.label,
-    required this.value,
-    required this.target,
-  });
-
-  final String label;
-  final String value;
-  final String target;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: Theme.of(context).textTheme.labelSmall),
-      const SizedBox(height: 2),
-      Text(value, style: Theme.of(context).textTheme.titleMedium),
-      Text(target, style: Theme.of(context).textTheme.labelSmall),
-    ],
+    ),
   );
 }
 
-class _MealCard extends StatelessWidget {
-  const _MealCard({
-    required this.meal,
-    required this.isCompleted,
-    required this.onConfirm,
+class _Status extends StatelessWidget {
+  const _Status({
+    required this.icon,
+    required this.message,
+    this.action,
+    this.onPressed,
   });
 
-  final _PlannedMeal meal;
-  final bool isCompleted;
-  final VoidCallback onConfirm;
+  final IconData icon;
+  final String message;
+  final String? action;
+  final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      button: !isCompleted,
-      label: isCompleted
-          ? '${meal.period}, realizada: ${meal.title}'
-          : '${meal.period}, ${meal.title}, ${meal.calories} quilocalorias',
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: isCompleted ? null : onConfirm,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: isCompleted
-                        ? scheme.secondaryContainer
-                        : scheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(
-                    isCompleted ? Icons.check_rounded : meal.icon,
-                    color: isCompleted
-                        ? scheme.onSecondaryContainer
-                        : scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${meal.period} · ${meal.time}',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        meal.title,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        meal.details,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (isCompleted)
-                  Text(
-                    'Realizada',
-                    style: Theme.of(context).textTheme.labelMedium
-                        ?.copyWith(color: scheme.primary),
-                  )
-                else
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: scheme.onSurfaceVariant,
-                  ),
-              ],
-            ),
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 36,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-        ),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          if (action != null && onPressed != null) ...[
+            const SizedBox(height: 12),
+            FilledButton(onPressed: onPressed, child: Text(action!)),
+          ],
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
 
-class _PlannedMeal {
-  const _PlannedMeal({
-    required this.id,
-    required this.period,
-    required this.time,
-    required this.title,
-    required this.details,
-    required this.calories,
-    required this.protein,
-    required this.carbohydrates,
-    required this.fat,
-    required this.icon,
-  });
+String _mealType(String type) => switch (type) {
+  'BREAKFAST' => 'Café da manhã',
+  'LUNCH' => 'Almoço',
+  'SNACK' => 'Lanche',
+  'DINNER' => 'Jantar',
+  _ => 'Refeição',
+};
 
-  final String id;
-  final String period;
-  final String time;
-  final String title;
-  final String details;
-  final int calories;
-  final int protein;
-  final int carbohydrates;
-  final int fat;
-  final IconData icon;
+String _eventLabel(CompletionType type) => switch (type) {
+  CompletionType.completed => 'realizada',
+  CompletionType.notCompleted => 'não realizada',
+  CompletionType.substituted => 'realizada com substituição',
+};
+
+String _mealLabel(TodayMeal meal) {
+  final time = meal.time;
+  if (time == null || time.isEmpty) return _mealType(meal.mealType);
+  return '${_mealType(meal.mealType)} · ${_shortTime(time)}';
 }
+
+String _shortTime(String time) =>
+    time.length >= 5 ? time.substring(0, 5) : time;
 
 String _todayLabel(DateTime date) {
   const weekdays = [
