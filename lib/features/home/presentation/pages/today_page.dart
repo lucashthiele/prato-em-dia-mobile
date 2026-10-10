@@ -162,7 +162,7 @@ class _TodayPageState extends State<TodayPage> {
             return RefreshIndicator(
               onRefresh: _cubit.load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 92),
                 children: [
                   Text(
                     _todayLabel(DateTime.now()),

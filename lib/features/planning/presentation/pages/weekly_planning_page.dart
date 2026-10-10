@@ -57,7 +57,7 @@ class _PlanningView extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 680),
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 92),
                 children: [
                   if (state.isLoading) const LinearProgressIndicator(),
                   if (state.error != null) ...[
