@@ -1,27 +1,36 @@
-# Catálogo alimentar no mobile — plano de entrega
+# Catálogo alimentar no mobile — módulo interno
 
 ## Objetivo
 
-Permitir que o paciente consulte os alimentos disponíveis, suas porções e os
-nutrientes fornecidos pelo catálogo do servidor. A primeira entrega é de leitura;
-o cadastro e a edição de alimentos não fazem parte desta tela.
+Manter disponível a base técnica para consultar alimentos, porções e nutrientes
+fornecidos pelo catálogo do servidor. O módulo não possui ponto de entrada na
+interface do paciente nesta etapa.
 
 ## Fluxo e interface
 
-1. Adicionar **Catálogo** à navegação de `PatientShell`, com ícone de alimento.
-2. Mostrar uma lista alfabética de alimentos ativos. Cada item exibe nome,
+O `PatientShell` tem exatamente três abas, nesta ordem: **Hoje**, **Minha
+semana** e **Perfil**. **Catálogo não é uma aba nem tem acesso direto.**
+
+O catálogo será usado apenas dentro de um futuro fluxo de substituições. A
+navegação, a experiência e o ponto de disparo desse fluxo são decisões de
+produto pendentes e devem ser definidos com o usuário antes de qualquer nova
+integração. Não implementar esse fluxo agora.
+
+Quando esse fluxo for aprovado, a tela existente deverá:
+
+1. Mostrar uma lista alfabética de alimentos ativos. Cada item exibe nome,
    marca quando houver, categoria quando houver e origem/fonte em texto discreto.
    Traduzir os valores de `origin` para rótulos em português.
-3. Carregar 20 a 30 itens por página, acrescentando a página seguinte ao chegar
+2. Carregar 20 a 30 itens por página, acrescentando a página seguinte ao chegar
    ao fim da lista. Exibir indicadores separados para carga inicial e mais itens.
-4. Ao tocar em um alimento, abrir uma tela de detalhes com nome, marca,
+3. Ao tocar em um alimento, abrir uma tela de detalhes com nome, marca,
    categoria, observações e porções ativas. Cada porção mostra medida, unidade,
    equivalente em gramas quando disponível e os nutrientes recebidos da API.
    Valores não numéricos devem aparecer como “traço”, “não disponível” ou o
    status equivalente, sem serem convertidos em zero. Mapear as chaves de
    nutrientes mais comuns para rótulos em português e usar a chave recebida
    quando não houver tradução; a API não fornece nome amigável nem ordem.
-5. Oferecer atualizar por gesto e tentar novamente após erro. Diferenciar
+4. Oferecer atualizar por gesto e tentar novamente após erro. Diferenciar
    catálogo vazio de falha de conexão. Preservar a posição da lista ao voltar
    dos detalhes ou trocar de aba.
 6. Usar componentes Material 3 e textos em português; validar leitura com
@@ -62,19 +71,21 @@ mas isso não substitui uma ordem estável no servidor.
 
 ## Critérios de aceite
 
-- A lista reflete os alimentos ativos do banco e carrega todas as páginas sem
+- Quando integrado ao fluxo aprovado, a lista reflete os alimentos ativos do banco e carrega todas as páginas sem
   repetir itens; retorno dos detalhes mantém a posição anterior.
 - Um item mostra seus dados e porções conforme a API, incluindo nutrientes com
   status não numérico e campos opcionais ausentes.
 - Estados de carregamento, vazio, erro e token expirado têm ações claras.
 - Testes de mapeamento/paginação/sessão e testes de widget cobrem lista, detalhes
-  e estados principais. Validar manualmente contra o servidor com catálogo
-  populado em Android ou iOS antes de concluir a entrega.
+  e estados principais. A barra principal permanece com apenas Hoje, Minha semana
+  e Perfil. Validar manualmente contra o servidor com catálogo populado em Android
+  ou iOS somente quando o fluxo de substituições for aprovado.
 
 ## Sequência
 
-1. Confirmar que o banco de desenvolvimento contém dados importados e testar as
+1. Definir e aprovar com o usuário o fluxo de substituições e seu ponto de
+   entrada.
+2. Confirmar que o banco de desenvolvimento contém dados importados e testar as
    duas consultas da API; alinhar a ordenação estável `name, id` com o back end.
-2. Implementar leitura, paginação e detalhes no Flutter.
-3. Validar acessibilidade e integração real app–servidor.
-4. Planejar a busca global com o back end e adicioná-la após o contrato paginado.
+3. Integrar leitura, paginação e detalhes ao fluxo aprovado.
+4. Validar acessibilidade e integração real app–servidor.

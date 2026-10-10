@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/config/app_environment.dart';
 import '../../../auth/domain/auth_session.dart';
-import '../../../catalog/data/catalog_api.dart';
-import '../../../catalog/data/catalog_repository_impl.dart';
-import '../../../catalog/presentation/pages/catalog_screen.dart';
 import '../../../planning/data/weekly_planning_api.dart';
 import '../../../planning/data/weekly_planning_repository_impl.dart';
 import '../../../planning/presentation/pages/weekly_planning_page.dart';
@@ -62,22 +59,6 @@ class _PatientShellState extends State<PatientShell> {
         ),
       ),
     ),
-    CatalogScreen(
-      repository: CatalogRepositoryImpl(
-        CatalogApi(
-          Dio(
-            BaseOptions(
-              baseUrl: AppEnvironment.apiBaseUrl,
-              connectTimeout: const Duration(seconds: 12),
-              receiveTimeout: const Duration(seconds: 12),
-              headers: const {'Accept': 'application/json'},
-            ),
-          ),
-          widget.session,
-          widget.renewSession,
-        ),
-      ),
-    ),
     ProfilePage(
       session: widget.session,
       refreshSession: widget.renewSession,
@@ -101,11 +82,6 @@ class _PatientShellState extends State<PatientShell> {
           icon: Icon(Icons.calendar_view_week_outlined),
           selectedIcon: Icon(Icons.calendar_view_week_rounded),
           label: 'Minha semana',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.restaurant_menu_outlined),
-          selectedIcon: Icon(Icons.restaurant_menu_rounded),
-          label: 'Catálogo',
         ),
         NavigationDestination(
           icon: Icon(Icons.person_outline_rounded),
