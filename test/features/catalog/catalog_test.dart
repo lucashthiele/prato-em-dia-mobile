@@ -196,7 +196,7 @@ class _DetailsRepository implements CatalogRepository {
         gramsEquivalent: '30',
         nutrients: {
           'protein': Nutrient(status: 'VALUE', unit: 'g', amount: '4'),
-          'iron': Nutrient(status: 'TRACE', unit: 'mg'),
+          'iron': Nutrient(status: 'TRACE', unit: 'mg', rawValue: 'tr'),
         },
       ),
     ],

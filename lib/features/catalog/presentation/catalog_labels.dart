@@ -24,12 +24,14 @@ String nutrientValueLabel(Nutrient nutrient) {
   if (nutrient.amount != null) {
     return '${nutrient.amount}${nutrient.unit.isEmpty ? '' : ' ${nutrient.unit}'}';
   }
-  if (nutrient.rawValue != null && nutrient.rawValue!.trim().isNotEmpty) {
-    return nutrient.rawValue!;
-  }
   return switch (nutrient.status.toUpperCase()) {
     'TRACE' => 'traço',
     'NOT_AVAILABLE' || 'UNKNOWN' || 'NOT_INFORMED' => 'não disponível',
-    _ => 'não disponível',
+    'NOT_APPLICABLE' => 'não se aplica',
+    'NOT_ANALYZED' => 'não analisado',
+    _ =>
+      nutrient.rawValue?.trim().isNotEmpty == true
+          ? nutrient.rawValue!
+          : 'não disponível',
   };
 }
