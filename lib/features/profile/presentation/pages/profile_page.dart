@@ -154,7 +154,7 @@ class _ProfilePageState extends State<ProfilePage> {
           final profile = state.profile!;
           return SafeArea(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 92),
               children: [
                 Text(
                   profile.fullName,
