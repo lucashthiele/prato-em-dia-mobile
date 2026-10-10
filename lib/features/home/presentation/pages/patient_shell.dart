@@ -9,7 +9,7 @@ import '../../../planning/presentation/pages/weekly_planning_page.dart';
 import '../../../profile/presentation/pages/profile_page.dart';
 import 'today_page.dart';
 
-/// The patient's three available MVP destinations.
+/// The patient's available MVP destinations.
 class PatientShell extends StatefulWidget {
   const PatientShell({
     required this.session,
