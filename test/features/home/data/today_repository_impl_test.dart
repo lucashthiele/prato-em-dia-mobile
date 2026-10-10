@@ -42,6 +42,14 @@ void main() {
       expect(api.payloads[0], api.payloads[1]);
     },
   );
+
+  test('keeps a valid meal whose scheduled time is null', () async {
+    final api = _FakeApi()..nullTime = true;
+    final repository = TodayRepositoryImpl(api, session, () async => session);
+    final data = await repository.load(DateTime(2026, 10, 10));
+    expect(data.meals.single.name, 'Almoço');
+    expect(data.meals.single.time, isNull);
+  });
 }
 
 class _FakeApi implements TodayRemoteDataSource {
@@ -49,6 +57,7 @@ class _FakeApi implements TodayRemoteDataSource {
   final keys = <String>[];
   final payloads = <Map<String, dynamic>>[];
   bool failFirstRecord = false;
+  bool nullTime = false;
 
   @override
   Future<List<dynamic>> plans(String authorization) async => [
@@ -59,7 +68,7 @@ class _FakeApi implements TodayRemoteDataSource {
         {
           'id': 'meal-1',
           'date': '2026-10-10',
-          'time': '12:30:00',
+          'time': nullTime ? null : '12:30:00',
           'mealType': 'LUNCH',
           'name': 'Almoço',
           'order': 1,

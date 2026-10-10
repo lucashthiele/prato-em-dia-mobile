@@ -49,7 +49,7 @@ class TodayRepositoryImpl implements TodayRepository {
               name: meal['name'] as String,
               mealType: meal['mealType'] as String,
               date: meal['date'] as String,
-              time: meal['time'] as String,
+              time: meal['time'] as String?,
               order: meal['order'] as int,
               itemCount: (meal['items'] as List<dynamic>).length,
             ),
@@ -57,7 +57,7 @@ class TodayRepositoryImpl implements TodayRepository {
         }
       }
       meals.sort((a, b) {
-        final time = a.time.compareTo(b.time);
+        final time = (a.time ?? '').compareTo(b.time ?? '');
         return time != 0 ? time : a.order.compareTo(b.order);
       });
       if (meals.isEmpty) return const TodayData(meals: [], latestEvents: {});

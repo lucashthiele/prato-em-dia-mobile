@@ -39,12 +39,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Nenhuma refeição planejada para hoje.'), findsOneWidget);
   });
+
+  testWidgets('shows an unscheduled meal without a time separator', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: TodayPage(
+          onLogout: () async {},
+          repository: _FakeTodayRepository(withoutTime: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Almoço'), findsOneWidget);
+    expect(find.textContaining('Almoço ·'), findsNothing);
+  });
 }
 
 class _FakeTodayRepository implements TodayRepository {
-  _FakeTodayRepository({this.empty = false});
+  _FakeTodayRepository({this.empty = false, this.withoutTime = false});
 
   final bool empty;
+  final bool withoutTime;
   CompletionType? recorded;
 
   @override
@@ -52,12 +70,12 @@ class _FakeTodayRepository implements TodayRepository {
     meals: empty
         ? []
         : [
-            const TodayMeal(
+            TodayMeal(
               id: 'meal-1',
               name: 'Almoço de hoje',
               mealType: 'LUNCH',
               date: '2026-10-10',
-              time: '12:30:00',
+              time: withoutTime ? null : '12:30:00',
               order: 1,
               itemCount: 2,
             ),

@@ -205,7 +205,7 @@ class _TodayPageState extends State<TodayPage> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Text(
-                                  '${_mealType(meal.mealType)} · ${_shortTime(meal.time)}',
+                                  _mealLabel(meal),
                                   style: Theme.of(context).textTheme.labelLarge,
                                 ),
                                 const SizedBox(height: 4),
@@ -361,6 +361,12 @@ String _eventLabel(CompletionType type) => switch (type) {
   CompletionType.notCompleted => 'não realizada',
   CompletionType.substituted => 'realizada com substituição',
 };
+
+String _mealLabel(TodayMeal meal) {
+  final time = meal.time;
+  if (time == null || time.isEmpty) return _mealType(meal.mealType);
+  return '${_mealType(meal.mealType)} · ${_shortTime(time)}';
+}
 
 String _shortTime(String time) =>
     time.length >= 5 ? time.substring(0, 5) : time;

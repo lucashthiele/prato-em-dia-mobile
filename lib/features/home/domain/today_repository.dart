@@ -13,7 +13,7 @@ class TodayMeal {
   final String name;
   final String mealType;
   final String date;
-  final String time;
+  final String? time;
   final int order;
   final int itemCount;
 }
