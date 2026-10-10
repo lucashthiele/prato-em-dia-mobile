@@ -14,7 +14,7 @@ import 'features/auth/presentation/cubit/change_password_cubit.dart';
 import 'features/auth/presentation/cubit/login_cubit.dart';
 import 'features/auth/presentation/pages/change_password_page.dart';
 import 'features/auth/presentation/pages/login_page.dart';
-import 'features/home/presentation/pages/today_page.dart';
+import 'features/home/presentation/pages/patient_shell.dart';
 
 void main() {
   runApp(const MainApp());
@@ -111,7 +111,11 @@ class _MainAppState extends State<MainApp> {
                 onLogout: _logout,
               ),
             )
-          : TodayPage(onLogout: _logout),
+          : PatientShell(
+              session: _session!,
+              renewSession: _authRepository.restoreSession,
+              onLogout: _logout,
+            ),
     );
   }
 }

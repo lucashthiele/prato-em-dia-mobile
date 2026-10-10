@@ -13,6 +13,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   String? _accessToken;
   String? _tokenType;
+  Future<AuthSession?>? _restoreInFlight;
 
   String? get accessToken => _accessToken;
 
@@ -65,6 +66,19 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<AuthSession?> restoreSession() async {
+    final inFlight = _restoreInFlight;
+    if (inFlight != null) return inFlight;
+
+    final restore = _restoreSessionInternal();
+    _restoreInFlight = restore;
+    try {
+      return await restore;
+    } finally {
+      if (identical(_restoreInFlight, restore)) _restoreInFlight = null;
+    }
+  }
+
+  Future<AuthSession?> _restoreSessionInternal() async {
     StoredAuthSession? stored;
     try {
       stored = await _tokenStore.read();

@@ -2,13 +2,17 @@
 
 ## Estado atual do worktree
 
-Implementado: composição simples no `main.dart`, login, persistência segura de
-refresh token, renovação de sessão, logout e troca obrigatória de senha. A API
-é acessada por `Dio`; estado de autenticação usa Cubits com `flutter_bloc`.
+Implementado: login, persistência segura de sessão, renovação de sessão,
+logout e troca obrigatória de senha. A navegação do paciente oferece Hoje,
+Minha semana e Perfil. Hoje lê refeições planejadas e registra realização ou
+não realização; Minha semana lista, gera, confirma e consulta planos e edita a
+preferência de geração; Perfil consulta e edita dados pessoais e mostra o
+vínculo ativo. A API é acessada por `Dio`; estado usa Cubits com
+`flutter_bloc`.
 
-Ainda ausente: relacionamento, prescrição, planejamento semanal, substituição,
-compras, tracking, histórico e perfil. Portanto, telas novas devem partir dos
-contratos reais da API, sem apresentar como existente um endpoint de roadmap.
+Ainda ausente: leitura detalhada da prescrição, substituição autorizada,
+compras e histórico dedicado. As telas devem partir dos contratos reais da
+API, sem apresentar como existente um endpoint de roadmap.
 
 ## Direção arquitetural
 
@@ -33,15 +37,15 @@ devem ser introduzidas incrementalmente, se confirmadas.
 
 ## Navegação alvo
 
-Após bootstrap/autenticação, a barra inferior inicia com quatro destinos:
+Após bootstrap/autenticação, a barra inferior tem três destinos disponíveis:
 
 1. Hoje — refeições da data civil atual e ações de execução.
-2. Minha semana — semana selecionada, prescrição e organização permitida.
-3. Compras — lista consolidada da semana.
-4. Perfil — conta, vínculo, prescrição e sessão.
+2. Minha semana — planos, refeições e geração automática.
+3. Perfil — dados pessoais, vínculo e sessão.
 
-Histórico é rota secundária a partir de Hoje/Perfil no MVP. O paciente não tem
-telas de nutricionista ou administrador.
+Compras depende de contrato ainda não disponível no backend. Histórico
+dedicado e substituições ainda não têm telas. O paciente não tem telas de
+nutricionista ou administrador.
 
 ## Comportamentos essenciais
 
@@ -52,8 +56,8 @@ telas de nutricionista ou administrador.
   rede.
 - Tratar 401 com um refresh controlado; 403 sem derrubar sessão; 404 voltando a
   contexto seguro; 409 recarregando e pedindo nova confirmação.
-- Para operações repetíveis, gerar e reutilizar `Idempotency-Key` por intenção
-  quando o endpoint passar a suportá-la.
+- No registro de realização, gerar e reutilizar `Idempotency-Key` por intenção
+  durante tentativas da mesma operação.
 - A marcação “comprado” é preferência local por usuário/plano/item/revisão; não
   altera o conteúdo autoritativo da lista. Após recálculo, preservar somente
   itens estáveis que ainda existam.

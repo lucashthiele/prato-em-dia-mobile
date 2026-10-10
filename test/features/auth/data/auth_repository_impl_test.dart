@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prato_em_dia_mobile/features/auth/data/auth_api.dart';
 import 'package:prato_em_dia_mobile/features/auth/data/auth_repository_impl.dart';
@@ -59,6 +61,26 @@ void main() {
       expect(api.refreshCalls, 1);
       expect(store.wasCleared, isTrue);
     });
+
+    test('shares one refresh across concurrent callers', () async {
+      final gate = Completer<Map<String, dynamic>>();
+      final api = _FakeAuthApi(refreshGate: gate);
+      final store = _MemoryTokenStore(_storedSession(expiresIn: -10));
+      final repository = AuthRepositoryImpl(api, store);
+
+      final first = repository.restoreSession();
+      final second = repository.restoreSession();
+      await Future<void>.delayed(Duration.zero);
+      expect(api.refreshCalls, 1);
+
+      gate.complete(_newTokens);
+      final sessions = await Future.wait([first, second]);
+      expect(sessions.map((session) => session?.accessToken), [
+        'new-access',
+        'new-access',
+      ]);
+      expect(store.value?.refreshToken, 'new-refresh');
+    });
   });
 
   test('changes the password and persists the rotated session', () async {
@@ -113,10 +135,15 @@ class _MemoryTokenStore implements AuthTokenStore {
 }
 
 class _FakeAuthApi implements AuthRemoteDataSource {
-  _FakeAuthApi({this.validateFails = false, this.refreshFails = false});
+  _FakeAuthApi({
+    this.validateFails = false,
+    this.refreshFails = false,
+    this.refreshGate,
+  });
 
   final bool validateFails;
   final bool refreshFails;
+  final Completer<Map<String, dynamic>>? refreshGate;
   int validateCalls = 0;
   int refreshCalls = 0;
   String? lastAccessToken;
@@ -153,6 +180,7 @@ class _FakeAuthApi implements AuthRemoteDataSource {
   Future<Map<String, dynamic>> refresh({required String refreshToken}) async {
     refreshCalls++;
     if (refreshFails) throw Exception('refresh failed');
+    if (refreshGate != null) return refreshGate!.future;
     return _newTokens;
   }
 

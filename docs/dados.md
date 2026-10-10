@@ -1,6 +1,6 @@
 # Modelo de dados
 
-## Implementado nas migrations até V011
+## Implementado nas migrations até V013
 
 | Área | Tabelas/agregados principais |
 | --- | --- |
@@ -8,6 +8,8 @@
 | Perfis e vínculo | `nutritionist_profile`, `patient_profile`, `nutritionist_patient_relationship` |
 | Catálogo | `food`, `food_portion`, `food_portion_nutrient`, `catalog_import_run` |
 | Prescrição | `prescription`, `prescription_version`, `prescribed_meal`, `prescribed_meal_item`, `allowed_substitution` |
+| Planejamento | `weekly_plan`, `planned_meal`, `planned_meal_item`, `weekly_planning_preference` |
+| Realização | `meal_completion_event` |
 
 Papéis: `PATIENT`, `NUTRITIONIST`, `ADMIN`. A conta possui estado ativo/inativo.
 Um paciente pode ter no máximo um vínculo ativo. Uma prescrição possui versões;
@@ -19,8 +21,7 @@ e nutrientes por porção. Importações são auditadas por `catalog_import_run`
 
 ## Planejado para migrations futuras
 
-`weekly_plan`, `planned_meal`, `planned_meal_item`, `shopping_list_item`,
-`meal_completion_event`, `subscription` e `audit_event`.
+`shopping_list_item`, `subscription` e `audit_event`.
 
 - O plano semanal guarda a versão publicada de origem.
 - A lista de compras é projeção recalculável, não fonte de verdade.

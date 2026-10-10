@@ -15,12 +15,12 @@
 
 ## Ordem prática para o Flutter
 
-1. Consolidar identidade/sessão já iniciada.
+1. Consolidar identidade/sessão, navegação e acessibilidade.
 2. Integrar prescrição vigente em modo leitura.
-3. Implementar semana somente após o backend disponibilizar o contrato.
-4. Acrescentar substituições e compras como atualização coordenada.
-5. Acrescentar registro/histórico com idempotência e estados claros.
-6. Finalizar perfil, acessibilidade, dados demonstrativos e teste integrado:
+3. Completar organização da semana e substituições autorizadas.
+4. Acrescentar compras quando o backend disponibilizar o contrato.
+5. Acrescentar histórico dedicado; o registro básico já usa idempotência.
+6. Validar o ciclo central com teste integrado:
    login → prescrição → semana → substituição → compras → execução.
 
 ## Reduções permitidas se houver prazo curto
