@@ -10,6 +10,31 @@ preferência de geração; Perfil consulta e edita dados pessoais e mostra o
 vínculo ativo. A API é acessada por `Dio`; estado usa Cubits com
 `flutter_bloc`.
 
+Também há a tela dedicada de registro de consumo aberta a partir de Hoje. Ela
+obtém os itens e o modo autoritativo em `GET /planned-meals/{id}/food-log`,
+resolve nomes, porções e kcal pelo catálogo existente e mantém o rascunho
+somente no aparelho. A confirmação é um `POST` idempotente e append-only de
+`completion-events`; ela não modifica planejamento ou prescrição. Porções e
+quantidades são editáveis; kcal só aparece quando o catálogo a disponibiliza.
+No modo de substituições, a UI apresenta apenas alternativas autorizadas pelo
+servidor. Em FREE, o seletor pagina o catálogo existente, abre o detalhe do
+alimento para escolher uma porção cadastrada e bloqueia a confirmação até que
+todo item novo tenha porção e quantidade positiva. Trocar um item planejado
+preserva a linha original com quantidade zero e cria uma nova linha sem vínculo
+planejado; remover um item novo apenas o descarta do rascunho. O mobile envia
+`multiplier: 1` e expõe uma única quantidade declarada.
+
+Os únicos valores aceitos para `mode` no cliente são `RESTRICTED`,
+`SUBSTITUTIONS_ONLY` e `FREE`; qualquer outro valor resulta em erro explícito,
+sem liberar edição em FREE.
+
+O POST exige uma porção ativa do catálogo em toda linha, inclusive uma linha
+planejada removida com quantidade zero; se houver unidade cadastrada, o app
+envia a unidade da porção selecionada. Com consumo não vazio, o rascunho
+preserva exatamente uma linha por item planejado e pode acrescentar itens FREE
+sem vínculo planejado. `allowedSubstitutionId` só é enviado em
+`SUBSTITUTIONS_ONLY`.
+
 Ainda ausente: leitura detalhada da prescrição, substituição autorizada,
 compras e histórico dedicado. As telas devem partir dos contratos reais da
 API, sem apresentar como existente um endpoint de roadmap.

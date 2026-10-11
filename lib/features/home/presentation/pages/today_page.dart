@@ -8,6 +8,7 @@ import '../../data/today_api.dart';
 import '../../data/today_repository_impl.dart';
 import '../../domain/today_repository.dart';
 import '../cubit/today_cubit.dart';
+import '../../../food_log/presentation/pages/food_log_page.dart';
 
 /// Today receives the active session and its existing renewal operation from
 /// the app shell. [repository] is optional for tests and feature composition.
@@ -74,6 +75,20 @@ class _TodayPageState extends State<TodayPage> {
   }
 
   Future<void> _choose(TodayMeal meal) async {
+    if (widget.session != null && widget.renewSession != null) {
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => FoodLogPage(
+            mealId: meal.id,
+            mealName: meal.name,
+            session: widget.session!,
+            renewSession: widget.renewSession!,
+          ),
+        ),
+      );
+      if (mounted) _cubit.load();
+      return;
+    }
     final type = await showModalBottomSheet<CompletionType>(
       context: context,
       showDragHandle: true,
