@@ -7,19 +7,26 @@ experiência mobile do paciente.
 
 ## Estado atual
 
-O primeiro fluxo já implementado cobre:
+O aplicativo já cobre os fluxos principais do paciente:
 
-- login por e-mail e senha;
-- armazenamento seguro do refresh token;
-- restauração e validação da sessão;
-- renovação da sessão;
-- troca obrigatória da senha inicial;
-- logout.
+- **Autenticação:** login por e-mail e senha, armazenamento seguro do refresh
+  token, restauração, validação e renovação serializada da sessão, troca
+  obrigatória da senha inicial e logout.
+- **Hoje:** plano do dia, resumo nutricional diário e registro de conclusão das
+  refeições (execuções), incluindo refeições planejadas sem horário.
+- **Semana:** geração, revisão e confirmação do plano semanal, com preferência
+  de planejamento.
+- **Registro alimentar:** registro do que foi realmente consumido em cada
+  refeição planejada, com porções e macros.
+- **Catálogo de alimentos:** navegação, busca e detalhes nutricionais dos
+  alimentos.
+- **Perfil:** dados do paciente e vínculo com o nutricionista.
+- **Navegação:** barra flutuante entre as áreas principais do paciente.
 
-O aplicativo usa `dio` para a API REST, `flutter_bloc` para o estado da
-autenticação e `flutter_secure_storage` para credenciais persistentes. As
-funcionalidades de prescrição, semana, substituições, compras e tracking estão
-planejadas, mas ainda não existem neste worktree.
+O aplicativo usa `dio` para a API REST, `flutter_bloc` (Cubits) para o estado e
+`flutter_secure_storage` para credenciais persistentes. Substituições
+autorizadas, lista de compras e acompanhamento profissional continuam
+planejados; veja o [roadmap](docs/roadmap.md).
 
 ## Contexto de produto
 
@@ -70,23 +77,33 @@ flutter test
 ```text
 lib/
   app/                         tema do aplicativo
-  core/                        configuração e design system compartilhado
-  features/
+  core/
+    config/                    ambiente (API_BASE_URL)
+    design_system/             widgets compartilhados
+    formatting/                formatação de decimais
+    nutrition/                 modelos de macronutrientes
+  features/                    cada feature segue data/domain/presentation
     auth/                      acesso, sessão e troca de senha
-      data/                    chamadas HTTP e armazenamento seguro
-      domain/                  contratos e modelos de autenticação
-      presentation/            páginas, Cubits e widgets
+    catalog/                   catálogo e detalhes de alimentos
+    food_log/                  registro alimentar por refeição
+    home/                      tela Hoje e shell de navegação
+    planning/                  planejamento semanal
+    profile/                   perfil e vínculo com o nutricionista
 ```
 
 ## API usada atualmente
 
-O fluxo de autenticação espera o prefixo `/api/v1` e utiliza:
+Todas as rotas usam o prefixo `/api/v1`:
 
-- `POST /auth/login`
-- `POST /auth/refresh`
-- `GET /me`
-- `PATCH /me/password`
-- `POST /auth/logout`
+| Área | Endpoints |
+| --- | --- |
+| Autenticação | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` |
+| Conta | `GET /me`, `PATCH /me/password` |
+| Hoje | `GET /patients/me/daily-nutrition-summary`, `/patients/me/meal-executions` |
+| Semana | `/patients/me/weekly-plans`, `/patients/me/weekly-planning-preference`, `/weekly-plans/{id}`, `/weekly-plans/{id}/confirm` |
+| Registro alimentar | `/planned-meals/{id}/food-log` |
+| Catálogo | `GET /foods`, `GET /foods/{id}` |
+| Perfil | `GET /patients/me/relationship` |
 
 Os detalhes de payload e respostas devem ser validados no contrato OpenAPI do
 backend antes de qualquer alteração de integração.
