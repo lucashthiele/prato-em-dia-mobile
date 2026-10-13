@@ -1,8 +1,14 @@
+import 'dart:io' show Platform;
+import 'dart:ui' show ImageFilter;
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/config/app_environment.dart';
 import '../../../auth/domain/auth_session.dart';
+import '../../../food_log/presentation/pages/food_log_page.dart';
 import '../../../planning/data/weekly_planning_api.dart';
 import '../../../planning/data/weekly_planning_repository_impl.dart';
 import '../../../planning/presentation/pages/weekly_planning_page.dart';
@@ -29,11 +35,7 @@ class PatientShell extends StatefulWidget {
 class _PatientShellState extends State<PatientShell> {
   int _selectedIndex = 0;
   late final List<Widget> _pages = [
-    TodayPage(
-      session: widget.session,
-      renewSession: widget.renewSession,
-      onLogout: widget.onLogout,
-    ),
+    TodayPage(session: widget.session, renewSession: widget.renewSession),
     WeeklyPlanningPage(
       repository: WeeklyPlanningRepositoryImpl(
         WeeklyPlanningApi(
@@ -58,6 +60,20 @@ class _PatientShellState extends State<PatientShell> {
           },
         ),
       ),
+      onOpenMeal: (meal) async {
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => FoodLogPage(
+              mealId: meal.id,
+              mealName: meal.name,
+              date:
+                  '${meal.date.year.toString().padLeft(4, '0')}-${meal.date.month.toString().padLeft(2, '0')}-${meal.date.day.toString().padLeft(2, '0')}',
+              session: widget.session,
+              renewSession: widget.renewSession,
+            ),
+          ),
+        );
+      },
     ),
     ProfilePage(
       session: widget.session,
@@ -66,44 +82,18 @@ class _PatientShellState extends State<PatientShell> {
     ),
   ];
 
-  void _showComingSoon(String message) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Stack(
-      children: [
-        IndexedStack(index: _selectedIndex, children: _pages),
-        if (MediaQuery.viewInsetsOf(context).bottom == 0)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(
-              top: false,
-              minimum: const EdgeInsets.only(bottom: 16),
-              child: Center(
-                heightFactor: 1,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 440),
-                    child: FloatingPatientNavigation(
-                      selectedIndex: _selectedIndex,
-                      onSelected: (index) =>
-                          setState(() => _selectedIndex = index),
-                      onComingSoon: _showComingSoon,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+    // Content scrolls under the floating bar; pages pad their lists by the
+    // bottom inset this exposes.
+    extendBody: true,
+    body: IndexedStack(index: _selectedIndex, children: _pages),
+    bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
+        ? null
+        : PatientNavigationBar(
+            selectedIndex: _selectedIndex,
+            onSelected: (index) => setState(() => _selectedIndex = index),
           ),
-      ],
-    ),
   );
 }
 
@@ -111,181 +101,229 @@ class FloatingPatientNavigation extends StatelessWidget {
   const FloatingPatientNavigation({
     required this.selectedIndex,
     required this.onSelected,
-    required this.onComingSoon,
+    this.glass = false,
     super.key,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onSelected;
-  final ValueChanged<String> onComingSoon;
+
+  /// Frosted, translucent look (approximates Liquid Glass) for iOS < 26.
+  final bool glass;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final pillColor = theme.brightness == Brightness.light
-        ? Colors.white
-        : scheme.surfaceContainerHigh;
-
-    return SizedBox(
-      width: 440,
-      height: 72,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.topCenter,
-        children: [
-          Positioned.fill(
-            top: 10,
-            child: Material(
-              elevation: 5,
-              shadowColor: Colors.black26,
-              color: pillColor,
-              borderRadius: BorderRadius.circular(30),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _SideDestination(
-                      label: 'Hoje',
-                      icon: Icons.today_outlined,
-                      selectedIcon: Icons.today_rounded,
-                      selected: selectedIndex == 0,
-                      onTap: () => onSelected(0),
-                    ),
-                  ),
-                  Expanded(
-                    child: _SideDestination(
-                      label: 'Semana',
-                      icon: Icons.calendar_view_week_outlined,
-                      selectedIcon: Icons.calendar_view_week_rounded,
-                      selected: selectedIndex == 1,
-                      onTap: () => onSelected(1),
-                    ),
-                  ),
-                  const SizedBox(width: 64),
-                  Expanded(
-                    child: _SideDestination(
-                      label: 'Compras',
-                      icon: Icons.shopping_bag_outlined,
-                      selectedIcon: Icons.shopping_bag_rounded,
-                      selected: false,
-                      onTap: () =>
-                          onComingSoon('Compras estarão disponíveis em breve.'),
-                    ),
-                  ),
-                  Expanded(
-                    child: _SideDestination(
-                      label: 'Perfil',
-                      icon: Icons.person_outline_rounded,
-                      selectedIcon: Icons.person_rounded,
-                      selected: selectedIndex == 2,
-                      onTap: () => onSelected(2),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Transform.translate(
-            offset: const Offset(0, -6),
-            child: Semantics(
-              label: 'Adicionar, em breve',
-              button: true,
-              child: Tooltip(
-                message: 'Adicionar (em breve)',
-                excludeFromSemantics: true,
-                child: SizedBox(
-                  width: 64,
-                  height: 72,
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: Container(
-                      width: 60,
-                      height: 60,
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: theme.scaffoldBackgroundColor,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Material(
-                        elevation: 3,
-                        shadowColor: scheme.primary.withValues(alpha: 0.25),
-                        color: scheme.primary,
-                        borderRadius: BorderRadius.circular(18),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () => onComingSoon(
-                            'Esta função estará disponível em breve.',
-                          ),
-                          child: const Icon(
-                            Icons.add_rounded,
-                            color: Colors.white,
-                            size: 27,
-                          ),
+    final scheme = Theme.of(context).colorScheme;
+    const destinations = [
+      ('Início', Icons.adjust_rounded, Icons.adjust_rounded),
+      ('Plano', Icons.calendar_today_outlined, Icons.calendar_today_rounded),
+      ('Perfil', Icons.person_outline_rounded, Icons.person_rounded),
+    ];
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 4, 28, 10),
+        child: _BarSurface(
+          glass: glass,
+          child: Row(
+            children: [
+              for (var index = 0; index < destinations.length; index++)
+                Expanded(
+                  child: Semantics(
+                    selected: selectedIndex == index,
+                    button: true,
+                    child: InkWell(
+                      onTap: () => onSelected(index),
+                      borderRadius: BorderRadius.circular(24),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 64),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              selectedIndex == index
+                                  ? destinations[index].$3
+                                  : destinations[index].$2,
+                              color: selectedIndex == index
+                                  ? scheme.primary
+                                  : scheme.onSurfaceVariant,
+                              size: 24,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              destinations[index].$1,
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(
+                                    color: selectedIndex == index
+                                        ? scheme.primary
+                                        : scheme.onSurfaceVariant,
+                                    fontWeight: selectedIndex == index
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SideDestination extends StatelessWidget {
-  const _SideDestination({
-    required this.label,
-    required this.icon,
-    required this.selectedIcon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      label: label,
-      button: true,
-      selected: selected,
-      child: Tooltip(
-        message: label,
-        excludeFromSemantics: true,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(28),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                selected ? selectedIcon : icon,
-                size: 22,
-                color: selected ? scheme.primary : scheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontSize: 12,
-                  height: 1.05,
-                  color: selected ? scheme.primary : scheme.onSurfaceVariant,
-                ),
-              ),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _BarSurface extends StatelessWidget {
+  const _BarSurface({required this.glass, required this.child});
+
+  final bool glass;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(34);
+    final decoration = BoxDecoration(
+      color: glass
+          ? Colors.white.withValues(alpha: 0.42)
+          : scheme.surface.withValues(alpha: 0.94),
+      borderRadius: radius,
+      border: Border.all(
+        color: glass
+            ? Colors.white.withValues(alpha: 0.7)
+            : scheme.outlineVariant,
+        width: glass ? 1 : 1.5,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: glass ? 0.1 : 0.12),
+          blurRadius: 24,
+          offset: const Offset(0, 8),
+        ),
+      ],
+    );
+    final content = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: decoration,
+      child: child,
+    );
+    if (!glass) return content;
+    // The blur is clipped to the pill; the shadow stays outside the clip.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: decoration.boxShadow,
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: decoration.copyWith(boxShadow: const []),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Picks the bar for the platform: native Liquid Glass on iOS 26+, an
+/// approximated glass on older iOS and the regular floating bar elsewhere.
+class PatientNavigationBar extends StatelessWidget {
+  const PatientNavigationBar({
+    required this.selectedIndex,
+    required this.onSelected,
+    super.key,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_iosMajorVersion >= 26) {
+      return NativePatientNavigation(
+        selectedIndex: selectedIndex,
+        onSelected: onSelected,
+      );
+    }
+    return FloatingPatientNavigation(
+      selectedIndex: selectedIndex,
+      onSelected: onSelected,
+      glass: _iosMajorVersion > 0,
+    );
+  }
+}
+
+/// Major iOS version, or 0 when not running on iOS.
+final int _iosMajorVersion = () {
+  if (kIsWeb || !Platform.isIOS) return 0;
+  final match = RegExp(r'(\d+)').firstMatch(Platform.operatingSystemVersion);
+  return int.tryParse(match?.group(1) ?? '') ?? 0;
+}();
+
+/// UIKit tab bar hosted as a platform view (Liquid Glass on iOS 26).
+class NativePatientNavigation extends StatefulWidget {
+  const NativePatientNavigation({
+    required this.selectedIndex,
+    required this.onSelected,
+    super.key,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  State<NativePatientNavigation> createState() =>
+      _NativePatientNavigationState();
+}
+
+class _NativePatientNavigationState extends State<NativePatientNavigation> {
+  MethodChannel? _channel;
+
+  @override
+  void didUpdateWidget(NativePatientNavigation old) {
+    super.didUpdateWidget(old);
+    if (old.selectedIndex != widget.selectedIndex) {
+      _channel?.invokeMethod<void>('select', widget.selectedIndex);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(28, 4, 28, 4),
+      child: SizedBox(
+        height: 72,
+        child: UiKitView(
+          viewType: 'prato_em_dia/native_tab_bar',
+          creationParamsCodec: const StandardMessageCodec(),
+          creationParams: {
+            'selected': widget.selectedIndex,
+            'tint': Theme.of(context).colorScheme.primary.toARGB32(),
+            'items': const [
+              {'title': 'Início', 'symbol': 'circle.circle'},
+              {'title': 'Plano', 'symbol': 'calendar'},
+              {'title': 'Perfil', 'symbol': 'person'},
+            ],
+          },
+          onPlatformViewCreated: (id) {
+            _channel = MethodChannel('prato_em_dia/native_tab_bar/$id')
+              ..setMethodCallHandler((call) async {
+                if (call.method == 'selected') {
+                  widget.onSelected(call.arguments as int);
+                }
+              });
+          },
+        ),
+      ),
+    ),
+  );
 }

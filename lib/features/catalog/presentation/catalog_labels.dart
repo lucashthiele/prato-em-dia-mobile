@@ -1,3 +1,4 @@
+import '../../../core/formatting/decimal.dart';
 import '../domain/catalog_repository.dart';
 
 String originLabel(String origin, String? source) => switch (origin) {
@@ -22,7 +23,7 @@ String nutrientLabel(String key) => switch (key.toLowerCase()) {
 
 String nutrientValueLabel(Nutrient nutrient) {
   if (nutrient.amount != null) {
-    return '${nutrient.amount}${nutrient.unit.isEmpty ? '' : ' ${nutrient.unit}'}';
+    return '${formatDecimal(nutrient.amount)}${nutrient.unit.isEmpty ? '' : ' ${nutrient.unit}'}';
   }
   return switch (nutrient.status.toUpperCase()) {
     'TRACE' => 'traço',

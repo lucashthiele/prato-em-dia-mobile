@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/formatting/decimal.dart';
 import '../../domain/catalog_repository.dart';
 import '../catalog_labels.dart';
 
@@ -72,11 +73,27 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               onRefresh: _load,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
                 children: [
                   _FoodHeader(food: details!.food),
+                  const SizedBox(height: 26),
+                  Text(
+                    'PORÇÕES',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      letterSpacing: 0.7,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (details.portions.isEmpty)
+                    const _NoPortions()
+                  else
+                    for (final portion in details.portions) ...[
+                      _PortionCard(portion: portion),
+                      const SizedBox(height: 12),
+                    ],
                   if (details.notes != null) ...[
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     _InfoSection(label: 'Observações', value: details.notes!),
                   ],
                   if (details.preparationMethod != null) ...[
@@ -86,19 +103,6 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
                       value: details.preparationMethod!,
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  Text(
-                    'Porções',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  if (details.portions.isEmpty)
-                    const _NoPortions()
-                  else
-                    for (final portion in details.portions) ...[
-                      _PortionCard(portion: portion),
-                      const SizedBox(height: 12),
-                    ],
                 ],
               ),
             ),
@@ -184,9 +188,15 @@ class _PortionCard extends StatelessWidget {
               else
                 for (final entry in portion.nutrients.entries)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '${nutrientLabel(entry.key)}: ${nutrientValueLabel(entry.value)}',
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(nutrientLabel(entry.key))),
+                        Text(
+                          nutrientValueLabel(entry.value),
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                      ],
                     ),
                   ),
             ],
@@ -238,11 +248,11 @@ class _DetailsError extends StatelessWidget {
 
 String _measureLabel(FoodPortion portion) {
   final pieces = <String>[
-    if (portion.quantity != null) portion.quantity!,
+    if (portion.quantity != null) formatDecimal(portion.quantity),
     if (portion.unit != null) portion.unit!,
   ];
   return pieces.isEmpty ? 'não disponível' : pieces.join(' ');
 }
 
 String _gramsLabel(String? grams) =>
-    grams == null ? 'não disponível' : '$grams g';
+    grams == null ? 'não disponível' : '${formatDecimal(grams)} g';

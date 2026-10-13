@@ -7,19 +7,26 @@ import '../cubit/weekly_planning_cubit.dart';
 
 /// A self-contained patient planning page. The host provides an authenticated repository.
 class WeeklyPlanningPage extends StatelessWidget {
-  const WeeklyPlanningPage({required this.repository, super.key});
+  const WeeklyPlanningPage({
+    required this.repository,
+    this.onOpenMeal,
+    super.key,
+  });
 
   final WeeklyPlanningRepository repository;
+  final Future<void> Function(PlannedMeal meal)? onOpenMeal;
 
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => WeeklyPlanningCubit(repository)..load(),
-    child: const _PlanningView(),
+    child: _PlanningView(onOpenMeal: onOpenMeal),
   );
 }
 
 class _PlanningView extends StatelessWidget {
-  const _PlanningView();
+  const _PlanningView({this.onOpenMeal});
+
+  final Future<void> Function(PlannedMeal meal)? onOpenMeal;
 
   @override
   Widget build(
@@ -53,11 +60,17 @@ class _PlanningView extends StatelessWidget {
           ],
         ),
         body: SafeArea(
+          bottom: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 680),
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 92),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  28,
+                  20,
+                  32 + MediaQuery.paddingOf(context).bottom,
+                ),
                 children: [
                   if (state.isLoading) const LinearProgressIndicator(),
                   if (state.error != null) ...[
@@ -66,7 +79,7 @@ class _PlanningView extends StatelessWidget {
                   ],
                   if (state.selected == null) ...[
                     Text(
-                      'Planeje seus próximos dias',
+                      'Sua rotina alimentar',
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 8),
@@ -89,7 +102,7 @@ class _PlanningView extends StatelessWidget {
                     ),
                     const SizedBox(height: 28),
                     Text(
-                      'Seus planos',
+                      'SEUS PLANOS',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 12),
@@ -99,20 +112,26 @@ class _PlanningView extends StatelessWidget {
                       ),
                     for (final plan in state.plans) ...[
                       Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        clipBehavior: Clip.antiAlias,
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
+                            horizontal: 18,
+                            vertical: 9,
                           ),
-                          minVerticalPadding: 12,
+                          leading: CircleAvatar(
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primaryContainer,
+                            foregroundColor: Theme.of(context)
+                                .colorScheme
+                                .onPrimaryContainer,
+                            child: const Icon(Icons.calendar_today_rounded),
+                          ),
                           title: Text(
                             '${_date(plan.periodStart)} a ${_date(plan.periodEnd)}',
                           ),
                           subtitle: Text(
                             plan.isConfirmed
-                                ? 'Confirmado'
+                                ? 'Plano confirmado'
                                 : 'Pendente de confirmação',
                           ),
                           trailing: const Icon(Icons.chevron_right_rounded),
@@ -121,6 +140,7 @@ class _PlanningView extends StatelessWidget {
                               : () => cubit.select(plan.id),
                         ),
                       ),
+                      const SizedBox(height: 10),
                     ],
                     const SizedBox(height: 20),
                     _PreferenceCard(
@@ -133,6 +153,7 @@ class _PlanningView extends StatelessWidget {
                       plan: state.selected!,
                       isSaving: state.isSaving,
                       onConfirm: cubit.confirm,
+                      onOpenMeal: onOpenMeal,
                     ),
                   ],
                 ],
@@ -145,20 +166,52 @@ class _PlanningView extends StatelessWidget {
   );
 }
 
-class _PlanDetail extends StatelessWidget {
+class _PlanDetail extends StatefulWidget {
   const _PlanDetail({
     required this.plan,
     required this.isSaving,
     required this.onConfirm,
+    this.onOpenMeal,
   });
 
   final WeeklyPlan plan;
   final bool isSaving;
   final VoidCallback onConfirm;
+  final Future<void> Function(PlannedMeal meal)? onOpenMeal;
+
+  @override
+  State<_PlanDetail> createState() => _PlanDetailState();
+}
+
+class _PlanDetailState extends State<_PlanDetail> {
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = DateTime(
+      widget.plan.periodStart.year,
+      widget.plan.periodStart.month,
+      widget.plan.periodStart.day,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlanDetail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.plan.id != widget.plan.id) {
+      _selectedDate = DateTime(
+        widget.plan.periodStart.year,
+        widget.plan.periodStart.month,
+        widget.plan.periodStart.day,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final plan = widget.plan;
     final meals = [...plan.meals]
       ..sort((a, b) {
         final date = a.date.compareTo(b.date);
@@ -184,8 +237,8 @@ class _PlanDetail extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: isSaving ? null : onConfirm,
-            child: isSaving
+            onPressed: widget.isSaving ? null : widget.onConfirm,
+            child: widget.isSaving
                 ? const SizedBox.square(
                     dimension: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
@@ -194,37 +247,113 @@ class _PlanDetail extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 24),
-        Text('Refeições', style: theme.textTheme.titleLarge),
-        const SizedBox(height: 8),
+        Text('DIAS DO PLANO', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 12),
         if (meals.isEmpty)
           const _EmptyCard(message: 'Este plano ainda não tem refeições.'),
-        for (final meal in meals)
-          Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${_date(meal.date)} · ${_mealType(meal.mealType)}${meal.time == null ? '' : ' · ${meal.time!.substring(0, 5)}'}',
-                    style: theme.textTheme.labelMedium,
+        if (meals.isNotEmpty) ...[
+          SizedBox(
+            height: 70,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount:
+                  widget.plan.periodEnd
+                      .difference(widget.plan.periodStart)
+                      .inDays +
+                  1,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final date = DateTime(
+                  widget.plan.periodStart.year,
+                  widget.plan.periodStart.month,
+                  widget.plan.periodStart.day + index,
+                );
+                final selected = DateUtils.isSameDay(date, _selectedDate);
+                return InkWell(
+                  onTap: () => setState(() => _selectedDate = date),
+                  borderRadius: BorderRadius.circular(26),
+                  child: Container(
+                    width: 54,
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(26),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          _weekdayShort(date.weekday),
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: selected
+                                ? Colors.white
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${date.day}',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: selected
+                                ? Colors.white
+                                : theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(meal.name, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${meal.items.length} ${meal.items.length == 1 ? 'item' : 'itens'}',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
+          const SizedBox(height: 12),
+          for (final meal in meals.where(
+            (meal) => DateUtils.isSameDay(meal.date, _selectedDate),
+          )) ...[
+            Card(
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 9,
+                ),
+                leading: CircleAvatar(
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  foregroundColor: theme.colorScheme.onPrimaryContainer,
+                  child: const Icon(Icons.restaurant_menu_rounded),
+                ),
+                title: Text(meal.name),
+                subtitle: Text(
+                  '${_mealType(meal.mealType)}${meal.time == null ? '' : ' · ${meal.time!.substring(0, 5)}'} · ${meal.items.length} ${meal.items.length == 1 ? 'item' : 'itens'}',
+                ),
+                trailing: widget.onOpenMeal == null
+                    ? null
+                    : const Icon(Icons.chevron_right_rounded),
+                onTap: widget.onOpenMeal == null
+                    ? null
+                    : () => widget.onOpenMeal!(meal),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (meals.every(
+            (meal) => !DateUtils.isSameDay(meal.date, _selectedDate),
+          ))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'Sem refeições neste dia.',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+        ],
       ],
     );
   }
 }
+
+String _weekdayShort(int weekday) =>
+    const ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][weekday - 1];
 
 class _PreferenceCard extends StatefulWidget {
   const _PreferenceCard({

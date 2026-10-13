@@ -13,6 +13,10 @@ pasta de projeto no Google Drive e confrontado com este repositório Flutter.
   já oferece e o que ainda é roadmap.
 - Consulte [dados](dados.md) antes de desenhar um recurso que persista dados.
 - Consulte [roadmap](roadmap.md) para prioridades e critérios de entrega.
+- Consulte [plano de implementação do redesign](plano-implementacao-redesign-telas.md)
+  para a direção visual e os fluxos alvo.
+- Consulte [dependências de backend do redesign](dependencias-backend-redesign.md)
+  antes de integrar resumo diário, períodos, busca e edição de execuções.
 
 Estes documentos são uma síntese, não uma cópia dos originais. Quando uma
 decisão precisar de precisão contratual (payload, OpenAPI ou migration), a

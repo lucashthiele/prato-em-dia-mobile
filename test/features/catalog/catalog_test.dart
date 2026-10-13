@@ -124,10 +124,83 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Proteínas: 4 g'), findsOneWidget);
-    expect(find.text('iron: traço'), findsOneWidget);
+    expect(find.text('Proteínas'), findsOneWidget);
+    expect(find.text('4 g'), findsOneWidget);
+    expect(find.text('iron'), findsOneWidget);
+    expect(find.text('traço'), findsOneWidget);
     expect(find.text('Equivalente: 30 g'), findsOneWidget);
   });
+
+  testWidgets('search field keeps focus while results reload', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: CatalogScreen(repository: _SearchRepository())),
+    );
+    await tester.pumpAndSettle();
+    await tester.showKeyboard(find.byType(TextField));
+    expect(tester.testTextInput.isVisible, isTrue);
+    await tester.enterText(find.byType(TextField), 'b');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.hasAnyClients, isTrue);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+      isTrue,
+    );
+    await tester.enterText(find.byType(TextField), 'ba');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.hasAnyClients, isTrue);
+  });
+
+  testWidgets('searches the catalog on the server and shows empty results', (
+    tester,
+  ) async {
+    final repository = _SearchRepository();
+    await tester.pumpWidget(
+      MaterialApp(home: CatalogScreen(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Aveia'), findsOneWidget);
+    expect(find.text('Banana'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'ban');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(repository.queries, ['', 'ban']);
+    expect(find.text('Aveia'), findsNothing);
+    expect(find.text('Banana'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'xyz');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.text('Nenhum alimento encontrado para “xyz”.'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Limpar busca'));
+    await tester.pumpAndSettle();
+    expect(find.text('Aveia'), findsOneWidget);
+  });
+}
+
+class _SearchRepository implements CatalogRepository {
+  final queries = <String?>[];
+
+  @override
+  Future<FoodDetails> get(String id) => throw UnimplementedError();
+
+  @override
+  Future<CatalogPage> list(int page, {String? query}) async {
+    queries.add(query);
+    final all = [_food('1', 'Aveia'), _food('2', 'Banana')];
+    final q = query ?? '';
+    return CatalogPage(
+      foods: [
+        for (final f in all)
+          if (f.name.toLowerCase().contains(q.toLowerCase())) f,
+      ],
+      totalPages: 1,
+    );
+  }
 }
 
 class _FakeApi implements CatalogRemoteDataSource {
@@ -151,7 +224,7 @@ class _FakeApi implements CatalogRemoteDataSource {
   };
 
   @override
-  Future<Map<String, dynamic>> list(int page) async => {
+  Future<Map<String, dynamic>> list(int page, {String? query}) async => {
     'content': [_foodJson('food-1', 'Aveia')],
     'totalPages': 1,
   };
@@ -162,7 +235,7 @@ class _PagedRepository implements CatalogRepository {
   Future<FoodDetails> get(String id) => throw UnimplementedError();
 
   @override
-  Future<CatalogPage> list(int page) async => switch (page) {
+  Future<CatalogPage> list(int page, {String? query}) async => switch (page) {
     0 => CatalogPage(
       foods: [_food('one', 'A'), _food('two', 'B')],
       totalPages: 2,
@@ -179,7 +252,7 @@ class _EmptyRepository implements CatalogRepository {
   Future<FoodDetails> get(String id) => throw UnimplementedError();
 
   @override
-  Future<CatalogPage> list(int page) async =>
+  Future<CatalogPage> list(int page, {String? query}) async =>
       const CatalogPage(foods: [], totalPages: 0);
 }
 
@@ -203,7 +276,8 @@ class _DetailsRepository implements CatalogRepository {
   );
 
   @override
-  Future<CatalogPage> list(int page) => throw UnimplementedError();
+  Future<CatalogPage> list(int page, {String? query}) =>
+      throw UnimplementedError();
 }
 
 FoodSummary _food(String id, String name) => FoodSummary(

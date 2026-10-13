@@ -14,21 +14,23 @@ void main() {
   );
 
   test(
-    'filters today meals and uses the latest event in paged history',
+    'filters today meals and derives status from the day executions',
     () async {
       final api = _FakeApi();
       final repository = TodayRepositoryImpl(api, session, () async => session);
       final data = await repository.load(DateTime(2026, 10, 10));
       expect(data.meals.map((meal) => meal.name), ['Almoço']);
       expect(data.latestEvents['meal-1']?.type, CompletionType.notCompleted);
-      expect(api.pages, [0, 1]);
+      expect(api.dates, ['2026-10-10']);
     },
   );
 
   test(
     'retries an uncertain command with the same key and timestamp',
     () async {
-      final api = _FakeApi()..failFirstRecord = true;
+      final api = _FakeApi()
+        ..failFirstRecord = true
+        ..recorded = true;
       final repository = TodayRepositoryImpl(api, session, () async => session);
       final meal = (await repository.load(DateTime(2026, 10, 10))).meals.single;
       await expectLater(
@@ -40,8 +42,39 @@ void main() {
       expect(api.keys.length, 2);
       expect(api.keys[0], api.keys[1]);
       expect(api.payloads[0], api.payloads[1]);
+      expect(api.payloads[0]['items'], [
+        {
+          'foodId': 'food-1',
+          'portionId': 'portion-1',
+          'unit': 'g',
+          'quantity': 100,
+          'multiplier': 1,
+          'plannedItemId': 'item-1',
+        },
+      ]);
     },
   );
+
+  test('loads the daily nutrition summary and tolerates its failure', () async {
+    final repository = TodayRepositoryImpl(
+      _FakeApi(),
+      session,
+      () async => session,
+    );
+    final summary = (await repository.load(DateTime(2026, 10, 10))).summary!;
+    expect(summary.prescribed['energy_kcal']?.amount, 2000);
+    expect(summary.prescribed['protein']?.unit, 'g');
+    expect(summary.realized['energy_kcal']?.amount, 1320.5);
+
+    final failing = TodayRepositoryImpl(
+      _FakeApi()..summaryFails = true,
+      session,
+      () async => session,
+    );
+    final data = await failing.load(DateTime(2026, 10, 10));
+    expect(data.summary, isNull);
+    expect(data.meals, isNotEmpty);
+  });
 
   test('keeps a valid meal whose scheduled time is null', () async {
     final api = _FakeApi()..nullTime = true;
@@ -53,11 +86,13 @@ void main() {
 }
 
 class _FakeApi implements TodayRemoteDataSource {
-  final pages = <int>[];
+  final dates = <String>[];
   final keys = <String>[];
   final payloads = <Map<String, dynamic>>[];
   bool failFirstRecord = false;
   bool nullTime = false;
+  bool recorded = false;
+  bool summaryFails = false;
 
   @override
   Future<List<dynamic>> plans(String authorization) async => [
@@ -88,34 +123,72 @@ class _FakeApi implements TodayRemoteDataSource {
   ];
 
   @override
-  Future<Map<String, dynamic>> events(String authorization, int page) async {
-    pages.add(page);
+  Future<Map<String, dynamic>> dailySummary(
+    String authorization,
+    String date,
+  ) async {
+    if (summaryFails) {
+      throw DioException(requestOptions: RequestOptions(path: 'summary'));
+    }
     return {
-      'totalPages': 2,
-      'content': page == 0
-          ? [
-              {
-                'plannedMealId': 'other-meal',
-                'eventType': 'COMPLETED',
-                'occurredAt': '2026-10-09T15:00:00Z',
-                'createdAt': '2026-10-09T15:01:00Z',
-              },
-            ]
-          : [
-              {
-                'plannedMealId': 'meal-1',
-                'eventType': 'NOT_COMPLETED',
-                'occurredAt': '2026-10-10T15:00:00Z',
-                'createdAt': '2026-10-10T15:01:00Z',
-              },
-            ],
+      'date': date,
+      'prescribed': {
+        'energy_kcal': {'amount': 2000, 'unit': 'kcal'},
+        'protein': {'amount': 140, 'unit': 'g'},
+      },
+      'planned': <String, dynamic>{},
+      'realized': {
+        'energy_kcal': {'amount': 1320.5, 'unit': 'kcal'},
+      },
     };
   }
 
   @override
-  Future<Map<String, dynamic>> record(
+  Future<List<dynamic>> executions(String authorization, String date) async {
+    dates.add(date);
+    return [
+      {
+        'id': 'exec-other',
+        'version': 1,
+        'plannedMealId': 'other-meal',
+        'items': [{}],
+        'createdAt': '2026-10-09T15:00:00Z',
+        'updatedAt': '2026-10-09T15:01:00Z',
+      },
+      if (!recorded)
+        {
+          'id': 'exec-1',
+          'version': 1,
+          'plannedMealId': 'meal-1',
+          'items': <dynamic>[],
+          'createdAt': '2026-10-10T15:00:00Z',
+          'updatedAt': '2026-10-10T15:01:00Z',
+        },
+    ];
+  }
+
+  @override
+  Future<Map<String, dynamic>> foodLog(
     String authorization,
     String mealId,
+  ) async => {
+    'plannedMealId': mealId,
+    'mode': 'FREE',
+    'items': [
+      {
+        'plannedItemId': 'item-1',
+        'catalogFoodId': 'food-1',
+        'catalogPortionId': 'portion-1',
+        'unit': 'g',
+        'quantity': 100,
+        'multiplier': 1,
+      },
+    ],
+  };
+
+  @override
+  Future<Map<String, dynamic>> createExecution(
+    String authorization,
     String idempotencyKey,
     Map<String, dynamic> payload,
   ) async {
@@ -126,10 +199,21 @@ class _FakeApi implements TodayRemoteDataSource {
       throw DioException(requestOptions: RequestOptions(path: 'test'));
     }
     return {
-      'plannedMealId': mealId,
-      'eventType': payload['eventType'],
-      'occurredAt': payload['occurredAt'],
+      'id': 'exec-new',
+      'version': 1,
+      'plannedMealId': payload['plannedMealId'],
+      'items': payload['items'],
       'createdAt': '2026-10-10T15:01:00Z',
+      'updatedAt': '2026-10-10T15:01:00Z',
     };
   }
+
+  @override
+  Future<Map<String, dynamic>> replaceExecution(
+    String authorization,
+    String id,
+    int version,
+    String idempotencyKey,
+    Map<String, dynamic> payload,
+  ) async => createExecution(authorization, idempotencyKey, payload);
 }

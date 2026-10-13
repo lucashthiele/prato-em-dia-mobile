@@ -1,5 +1,10 @@
 # Aplicativo Flutter do paciente
 
+> Direção vigente de redesign: [plano de implementação](plano-implementacao-redesign-telas.md).
+> Ele substitui a navegação e a hierarquia visual documentadas abaixo quando
+> houver divergência. Dependências de contratos estão em
+> [dependências do backend](dependencias-backend-redesign.md).
+
 ## Estado atual do worktree
 
 Implementado: login, persistência segura de sessão, renovação de sessão,
