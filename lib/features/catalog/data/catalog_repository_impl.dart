@@ -9,8 +9,8 @@ class CatalogRepositoryImpl implements CatalogRepository {
   final CatalogRemoteDataSource _api;
 
   @override
-  Future<CatalogPage> list(int page) => _run(() async {
-    final data = await _api.list(page);
+  Future<CatalogPage> list(int page, {String? query}) => _run(() async {
+    final data = await _api.list(page, query: query);
     final content = _array(data['content']);
     final totalPages = data['totalPages'];
     if (totalPages is! int || totalPages < 0) {

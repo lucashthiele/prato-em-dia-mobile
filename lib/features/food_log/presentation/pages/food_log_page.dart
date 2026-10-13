@@ -1,18 +1,55 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/config/app_environment.dart';
+import '../../../../core/formatting/decimal.dart';
+import '../../../../core/nutrition/macros.dart';
 import '../../../auth/domain/auth_session.dart';
+import '../../../catalog/data/allowed_foods_repository.dart';
+import '../../../catalog/data/catalog_api.dart';
+import '../../../catalog/data/catalog_repository_impl.dart';
+import '../../../catalog/domain/catalog_repository.dart';
+import '../../../catalog/presentation/pages/catalog_screen.dart';
 
 enum _Mode { restricted, substitutionsOnly, free }
 
 class _Portion {
-  const _Portion(this.id, this.label, this.unit, this.kcal);
+  const _Portion(
+    this.id,
+    this.label,
+    this.unit, [
+    this.macros = const {},
+    this.quantity,
+  ]);
   final String id, label;
   final String? unit;
-  final num? kcal;
+  // Size of one portion in [unit]; the server scales nutrients by
+  // quantity × multiplier ÷ this value.
+  final num? quantity;
+  // Per-portion amounts by macro key (see _macroKeys); absent when the catalog
+  // has no numeric value for it.
+  final Map<String, num> macros;
+  num? get kcal => macros['kcal'];
+}
+
+Map<String, num> _macros(Map<String, dynamic>? nutrients) {
+  final result = <String, num>{};
+  for (final macro in macroAliases.keys) {
+    // Only numeric values count; trace/unavailable entries are skipped.
+    final byCode = {
+      for (final e in (nutrients ?? const <String, dynamic>{}).entries)
+        if (e.value is Map<String, dynamic> &&
+            (e.value as Map<String, dynamic>)['status'] == 'VALUE' &&
+            _num((e.value as Map<String, dynamic>)['amount']) != null)
+          e.key: _num((e.value as Map<String, dynamic>)['amount'])!,
+    };
+    final amount = pickMacro(byCode, macro);
+    if (amount != null) result[macro] = amount;
+  }
+  return result;
 }
 
 class _Food {
@@ -31,6 +68,8 @@ class _Item {
     this.plannedId,
     this.allowedId,
     this.alternatives = const [],
+    this.planFood,
+    this.planPortion,
   });
   final String id;
   final _Food food;
@@ -39,6 +78,10 @@ class _Item {
   final num originalQuantity;
   final String? plannedId, allowedId;
   final List<_Item> alternatives;
+  // What the nutritionist originally planned, kept so a substituted item can
+  // always be switched back.
+  final _Food? planFood;
+  final _Portion? planPortion;
   bool get removed => plannedId != null && quantity == 0;
   // The backend requires an active catalog portion for every submitted line,
   // including a planned line whose declared consumption is zero.
@@ -48,6 +91,7 @@ class _Item {
     _Portion? portion,
     num? quantity,
     String? allowedId,
+    bool clearAllowed = false,
   }) => _Item(
     id: id,
     food: food ?? this.food,
@@ -55,8 +99,10 @@ class _Item {
     quantity: quantity ?? this.quantity,
     originalQuantity: originalQuantity,
     plannedId: plannedId,
-    allowedId: allowedId ?? this.allowedId,
+    allowedId: clearAllowed ? null : allowedId ?? this.allowedId,
     alternatives: alternatives,
+    planFood: planFood,
+    planPortion: planPortion,
   );
 }
 
@@ -64,26 +110,36 @@ class FoodLogPage extends StatefulWidget {
   const FoodLogPage({
     required this.mealId,
     required this.mealName,
+    required this.date,
     required this.session,
     required this.renewSession,
+    this.dio,
     super.key,
   });
-  final String mealId, mealName;
+
+  /// Civil date (`yyyy-MM-dd`) of the planned meal; executions are dated.
+  final String mealId, mealName, date;
   final AuthSession session;
   final Future<AuthSession?> Function() renewSession;
+  final Dio? dio;
   @override
   State<FoodLogPage> createState() => _State();
 }
 
 class _State extends State<FoodLogPage> {
-  late final Dio dio = Dio(
-    BaseOptions(
-      baseUrl: AppEnvironment.apiBaseUrl,
-      headers: const {'Accept': 'application/json'},
-    ),
-  );
+  late final Dio dio =
+      widget.dio ??
+      Dio(
+        BaseOptions(
+          baseUrl: AppEnvironment.apiBaseUrl,
+          headers: const {'Accept': 'application/json'},
+        ),
+      );
   late AuthSession session = widget.session;
-  late final key = _key();
+  String key = _key();
+  String? lastBody;
+  // Active execution of this meal, when one was already saved.
+  Map<String, dynamic>? execution;
   _Mode? mode;
   List<_Item>? items;
   String? error;
@@ -119,13 +175,12 @@ class _State extends State<FoodLogPage> {
       d['name'] as String,
       (d['portions'] as List).map((x) {
         final p = x as Map<String, dynamic>;
-        final n = p['nutrients'] as Map<String, dynamic>?;
-        final cal = n?['CAL'] as Map<String, dynamic>?;
         return _Portion(
           p['id'] as String,
           p['label'] as String,
           p['unit'] as String?,
-          _num(cal?['amount']),
+          _macros(p['nutrients'] as Map<String, dynamic>?),
+          _num(p['quantity']),
         );
       }).toList(),
     );
@@ -139,18 +194,92 @@ class _State extends State<FoodLogPage> {
       final a = x as Map<String, dynamic>;
       alts.add(await item(a, allowed: a['allowedSubstitutionId'] as String?));
     }
+    final planned = part == null
+        ? null
+        : f.portions.where((p) => p.id == part).firstOrNull;
+    final portions = _portionCount(d, planned);
     return _Item(
       id: '${d['plannedItemId'] ?? f.id}-$allowed',
       food: f,
       portion: part == null
           ? null
           : f.portions.where((p) => p.id == part).firstOrNull,
-      quantity: _num(d['quantity']) ?? 0,
-      originalQuantity: _num(d['quantity']) ?? 0,
+      quantity: portions,
+      originalQuantity: portions,
       plannedId: d['plannedItemId'] as String?,
       allowedId: allowed,
       alternatives: alts,
+      planFood: f,
+      planPortion: part == null
+          ? null
+          : f.portions.where((p) => p.id == part).firstOrNull,
     );
+  }
+
+  Future<_Item> recordedItem(
+    Map<String, dynamic> snapshot,
+    _Item? planned,
+    int index,
+  ) async {
+    final foodId = snapshot['foodId'] as String;
+    final f = planned?.food.id == foodId ? planned!.food : await food(foodId);
+    final portionId = snapshot['portionId'] as String?;
+    final unit = snapshot['unit'] as String?;
+    final portion =
+        f.portions.where((p) => p.id == portionId).firstOrNull ??
+        (portionId == null
+            ? null
+            : _Portion(portionId, unit ?? 'Porção registrada', unit));
+    return _Item(
+      id: planned?.id ?? 'recorded-$index',
+      food: f,
+      portion: portion,
+      quantity: _portionCount(snapshot, portion),
+      originalQuantity: planned?.originalQuantity ?? 0,
+      plannedId: planned?.plannedId,
+      allowedId: snapshot['allowedSubstitutionId'] as String?,
+      alternatives: planned?.alternatives ?? const [],
+      planFood: planned?.planFood,
+      planPortion: planned?.planPortion,
+    );
+  }
+
+  Future<List<_Item>> latestItems(List<_Item> planned) async {
+    final response = await auth(
+      (a) => dio.get<List<dynamic>>(
+        '/api/v1/patients/me/meal-executions',
+        queryParameters: {'date': widget.date},
+        options: Options(headers: {'Authorization': a}),
+      ),
+    );
+    final current = response.data!
+        .cast<Map<String, dynamic>>()
+        .where((e) => e['plannedMealId'] == widget.mealId)
+        .firstOrNull;
+    execution = current;
+    if (current == null) return planned;
+    final consumed = (current['items'] as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+    final byPlannedId = {
+      for (final x in consumed)
+        if (x['plannedItemId'] != null) x['plannedItemId'] as String: x,
+    };
+    final result = <_Item>[];
+    for (final x in planned) {
+      final snapshot = byPlannedId[x.plannedId];
+      // A planned item missing from the saved execution was not consumed.
+      result.add(
+        snapshot == null
+            ? x.copy(quantity: 0)
+            : await recordedItem(snapshot, x, result.length),
+      );
+    }
+    for (final x in consumed) {
+      if (x['plannedItemId'] == null) {
+        result.add(await recordedItem(x, null, result.length));
+      }
+    }
+    return result;
   }
 
   Future<void> load() async {
@@ -167,7 +296,8 @@ class _State extends State<FoodLogPage> {
       for (final x in d['items'] as List) {
         list.add(await item(x as Map<String, dynamic>));
       }
-      if (mounted)
+      final currentItems = await latestItems(list);
+      if (mounted) {
         setState(() {
           mode = switch (d['mode']) {
             'RESTRICTED' => _Mode.restricted,
@@ -175,13 +305,18 @@ class _State extends State<FoodLogPage> {
             'FREE' => _Mode.free,
             _ => throw const FormatException('Modo de registro inválido.'),
           };
-          items = list;
+          items = currentItems;
         });
+      }
     } on DioException catch (e) {
       if (mounted) setState(() => error = _message(e));
     } on FormatException {
       if (mounted) {
-        setState(() => error = 'O modo de registro informado é inválido.');
+        setState(() => error = 'Não foi possível ler o registro da refeição.');
+      }
+    } on TypeError {
+      if (mounted) {
+        setState(() => error = 'Não foi possível ler o registro da refeição.');
       }
     }
   }
@@ -194,12 +329,24 @@ class _State extends State<FoodLogPage> {
   );
   Future<void> edit(int i) async {
     final x = items![i];
-    if (x.removed) return;
-    final y = await showModalBottomSheet<_Item>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) =>
-          _Editor(item: x, canChangeFood: mode == _Mode.substitutionsOnly),
+    final y = await Navigator.of(context).push<_Item>(
+      MaterialPageRoute(
+        builder: (sheet) => _Editor(
+          item: x.removed ? x.copy(quantity: x.originalQuantity) : x,
+          onSwap: mode == _Mode.restricted
+              ? null
+              : () {
+                  Navigator.pop(sheet);
+                  mode == _Mode.free ? swapFree(i) : swapAllowed(i);
+                },
+          onRemove: mode == _Mode.free && !x.removed
+              ? () {
+                  Navigator.pop(sheet);
+                  remove(i);
+                }
+              : null,
+        ),
+      ),
     );
     if (y != null) replace(i, y);
   }
@@ -213,47 +360,102 @@ class _State extends State<FoodLogPage> {
     }
   }
 
-  Future<void> add({int? replaceIndex}) async {
-    final f = await pick();
-    if (f == null) return;
-    final y = await showModalBottomSheet<_Item>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _Editor(
-        item: _Item(
-          id: 'new-${_key()}',
-          food: f,
-          quantity: 0,
-          originalQuantity: 0,
-        ),
-        canChangeFood: false,
+  late final CatalogRepository catalog = CatalogRepositoryImpl(
+    CatalogApi(dio, session, widget.renewSession),
+  );
+
+  Future<_Food?> pick(CatalogRepository repository) async {
+    final chosen = await Navigator.of(context).push<FoodSummary>(
+      MaterialPageRoute(
+        builder: (_) => CatalogScreen(repository: repository, selecting: true),
       ),
     );
-    if (y != null && mounted)
-      setState(() {
-        if (replaceIndex != null)
-          replace(replaceIndex, items![replaceIndex].copy(quantity: 0));
-        items = [...items!, y];
-      });
+    if (chosen == null || !mounted) return null;
+    try {
+      return await food(chosen.id);
+    } on DioException catch (e) {
+      _snack(_message(e));
+    } on TypeError {
+      _snack('Não foi possível abrir este alimento.');
+    }
+    return null;
   }
 
-  Future<_Food?> pick() => showModalBottomSheet<_Food>(
-    context: context,
-    isScrollControlled: true,
-    builder: (_) => _Picker(
-      load: food,
-      page: (p) async {
-        final r = await auth(
-          (a) => dio.get<Map<String, dynamic>>(
-            '/api/v1/foods',
-            queryParameters: {'page': p, 'size': 20},
-            options: Options(headers: {'Authorization': a}),
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Free mode: any catalog food, planned line is zeroed and a new one added.
+  Future<void> swapFree(int i) async {
+    final f = await pick(catalog);
+    if (f == null || !mounted) return;
+    final y = await Navigator.of(context).push<_Item>(
+      MaterialPageRoute(
+        builder: (_) => _Editor(
+          item: _Item(
+            id: 'new-${_key()}',
+            food: f,
+            quantity: 0,
+            originalQuantity: 0,
           ),
-        );
-        return r.data!;
-      },
-    ),
-  );
+        ),
+      ),
+    );
+    if (y != null && mounted) {
+      setState(() {
+        replace(i, items![i].copy(quantity: 0));
+        items = [...items!, y];
+      });
+    }
+  }
+
+  /// Substitutions-only mode: same catalog screen, listing only allowed foods.
+  Future<void> swapAllowed(int i) async {
+    final x = items![i];
+    final options = <String, _Item>{
+      if (x.planFood != null)
+        x.planFood!.id: x.copy(
+          food: x.planFood,
+          portion: x.planPortion,
+          clearAllowed: true,
+        ),
+      for (final a in x.alternatives)
+        a.food.id: x.copy(
+          food: a.food,
+          portion: a.portion,
+          allowedId: a.allowedId,
+          clearAllowed: a.allowedId == null,
+        ),
+    };
+    final f = await pick(
+      AllowedFoodsRepository(catalog, options.keys.toList()),
+    );
+    final chosen = f == null ? null : options[f.id];
+    if (chosen == null || !mounted) return;
+    replace(i, chosen);
+    await edit(i);
+  }
+
+  Future<void> add() async {
+    final f = await pick(catalog);
+    if (f == null || !mounted) return;
+    final y = await Navigator.of(context).push<_Item>(
+      MaterialPageRoute(
+        builder: (_) => _Editor(
+          item: _Item(
+            id: 'new-${_key()}',
+            food: f,
+            quantity: 0,
+            originalQuantity: 0,
+          ),
+        ),
+      ),
+    );
+    if (y != null && mounted) setState(() => items = [...items!, y]);
+  }
+
   Future<void> save() async {
     if (items!.any((x) => !x.complete)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -265,36 +467,57 @@ class _State extends State<FoodLogPage> {
     }
     setState(() => saving = true);
     try {
+      final body = <String, dynamic>{
+        'date': widget.date,
+        'plannedMealId': widget.mealId,
+        'items': [
+          for (final x in items!.where((x) => !x.removed))
+            {
+              'foodId': x.food.id,
+              'portionId': x.portion!.id,
+              if (x.portion?.unit != null) 'unit': x.portion!.unit,
+              // The server scales by quantity × multiplier ÷ portion size, so
+              // send one portion's size and the number of portions as multiplier.
+              'quantity': x.portion!.quantity ?? 1,
+              'multiplier': x.quantity,
+              if (x.plannedId != null) 'plannedItemId': x.plannedId,
+              if (mode == _Mode.substitutionsOnly && x.allowedId != null)
+                'allowedSubstitutionId': x.allowedId,
+            },
+        ],
+      };
+      // Same intention (retry after an uncertain failure) keeps the key.
+      final encoded = jsonEncode(body);
+      if (encoded != lastBody) key = _key();
+      lastBody = encoded;
+      final current = execution;
       await auth(
-        (a) => dio.post(
-          '/api/v1/planned-meals/${widget.mealId}/completion-events',
-          data: {
-            'occurredAt': DateTime.now().toUtc().toIso8601String(),
-            'consumedItems': items!
-                .map(
-                  (x) => {
-                    'catalogFoodId': x.food.id,
-                    if (x.portion != null) 'catalogPortionId': x.portion!.id,
-                    if (x.portion?.unit != null) 'unit': x.portion!.unit,
-                    'quantity': x.quantity,
-                    'multiplier': 1,
-                    if (x.plannedId != null) 'plannedItemId': x.plannedId,
-                    if (mode == _Mode.substitutionsOnly && x.allowedId != null)
-                      'allowedSubstitutionId': x.allowedId,
+        (a) => current == null
+            ? dio.post(
+                '/api/v1/patients/me/meal-executions',
+                data: body,
+                options: Options(
+                  headers: {'Authorization': a, 'Idempotency-Key': key},
+                ),
+              )
+            : dio.put(
+                '/api/v1/patients/me/meal-executions/${current['id']}',
+                data: body,
+                options: Options(
+                  headers: {
+                    'Authorization': a,
+                    'If-Match': current['version'],
+                    'Idempotency-Key': key,
                   },
-                )
-                .toList(),
-          },
-          options: Options(
-            headers: {'Authorization': a, 'Idempotency-Key': key},
-          ),
-        ),
+                ),
+              ),
       );
       if (mounted) Navigator.pop(context, true);
     } on DioException catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(_message(e))));
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -302,7 +525,7 @@ class _State extends State<FoodLogPage> {
 
   @override
   Widget build(BuildContext c) {
-    if (items == null)
+    if (items == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Registrar consumo')),
         body: Center(
@@ -311,59 +534,90 @@ class _State extends State<FoodLogPage> {
               : OutlinedButton(onPressed: load, child: Text(error!)),
         ),
       );
+    }
     return Scaffold(
-      appBar: AppBar(title: const Text('Registrar consumo')),
+      appBar: AppBar(title: const Text('Detalhe da refeição')),
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(20),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  widget.mealName,
-                  style: Theme.of(c).textTheme.headlineSmall,
-                ),
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Refeição planejada',
+                    style: Theme.of(c).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(c).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.mealName,
+                    style: Theme.of(c).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 16),
+                  ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 15,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(c).colorScheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(
+                          '${_fmt(items!.fold<num>(0, (sum, x) => sum + (x.portion?.kcal ?? 0) * x.quantity))} kcal',
+                          style: Theme.of(c).textTheme.titleMedium,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  Text(
+                    'ALIMENTOS',
+                    style: Theme.of(c).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(c).colorScheme.onSurfaceVariant,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: items!.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (_, i) {
                   final x = items![i];
                   return Card(
                     child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 5,
+                      ),
+                      leading: Icon(
+                        x.removed
+                            ? Icons.remove_circle_outline_rounded
+                            : Icons.restaurant_outlined,
+                        color: x.removed
+                            ? Theme.of(c).colorScheme.onSurfaceVariant
+                            : Theme.of(c).colorScheme.primary,
+                      ),
                       title: Text(x.food.name),
                       subtitle: Text(
                         x.removed
                             ? 'Não consumido'
-                            : '${x.portion?.label ?? 'Escolha uma porção'} · Quantidade: ${_fmt(x.quantity)}${x.portion?.kcal == null ? '' : ' · ${_fmt(x.portion!.kcal! * x.quantity)} kcal'}',
+                            : x.portion == null
+                            ? 'Escolha uma porção'
+                            : '${_fmt(x.quantity)} × ${x.portion!.label}${x.portion!.kcal == null ? '' : ' · ${_fmt(x.portion!.kcal! * x.quantity)} kcal'}',
                       ),
                       onTap: () => edit(i),
-                      trailing: mode == _Mode.free
-                          ? PopupMenuButton<String>(
-                              onSelected: (v) {
-                                if (v == 'remove')
-                                  remove(i);
-                                else
-                                  add(replaceIndex: i);
-                              },
-                              itemBuilder: (_) => [
-                                const PopupMenuItem(
-                                  value: 'replace',
-                                  child: Text('Trocar alimento'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'remove',
-                                  child: Text(
-                                    x.removed ? 'Desfazer remoção' : 'Remover',
-                                  ),
-                                ),
-                              ],
-                            )
-                          : null,
+                      trailing: const Icon(Icons.chevron_right_rounded),
                     ),
                   );
                 },
@@ -392,10 +646,18 @@ class _State extends State<FoodLogPage> {
   }
 }
 
+const _macroRows = [
+  ('kcal', 'Energia', 'kcal'),
+  ('protein', 'Proteínas', 'g'),
+  ('carbs', 'Carboidratos', 'g'),
+  ('fat', 'Gorduras', 'g'),
+  ('fiber', 'Fibras', 'g'),
+];
+
 class _Editor extends StatefulWidget {
-  const _Editor({required this.item, required this.canChangeFood});
+  const _Editor({required this.item, this.onSwap, this.onRemove});
   final _Item item;
-  final bool canChangeFood;
+  final VoidCallback? onSwap, onRemove;
   @override
   State<_Editor> createState() => _EditorState();
 }
@@ -403,7 +665,8 @@ class _Editor extends StatefulWidget {
 class _EditorState extends State<_Editor> {
   late _Food f = widget.item.food;
   late _Portion? p = widget.item.portion;
-  late final q = TextEditingController(text: _fmt(widget.item.quantity));
+  late final q = TextEditingController(text: _fmt(widget.item.quantity))
+    ..addListener(() => setState(() {}));
   @override
   void dispose() {
     q.dispose();
@@ -412,168 +675,91 @@ class _EditorState extends State<_Editor> {
 
   @override
   Widget build(BuildContext c) {
-    final choices = [widget.item, ...widget.item.alternatives];
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        20,
-        20,
-        MediaQuery.viewInsetsOf(c).bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.canChangeFood && choices.length > 1)
-            DropdownButtonFormField<_Item>(
-              value: choices.where((x) => x.food.id == f.id).firstOrNull,
-              items: choices
-                  .map(
-                    (x) => DropdownMenuItem(value: x, child: Text(x.food.name)),
-                  )
+    final theme = Theme.of(c);
+    final qty = parseDecimal(q.text) ?? 0;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Registrar alimento')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(f.name, style: theme.textTheme.headlineSmall),
+            const SizedBox(height: 20),
+            DropdownButtonFormField<_Portion>(
+              initialValue: p,
+              decoration: const InputDecoration(labelText: 'Porção ou unidade'),
+              items: f.portions
+                  .map((x) => DropdownMenuItem(value: x, child: Text(x.label)))
                   .toList(),
-              onChanged: (x) => setState(() {
-                f = x!.food;
-                p = x.portion;
-              }),
+              onChanged: (x) => setState(() => p = x),
             ),
-          DropdownButtonFormField<_Portion>(
-            value: p,
-            decoration: const InputDecoration(labelText: 'Porção ou unidade'),
-            items: f.portions
-                .map((x) => DropdownMenuItem(value: x, child: Text(x.label)))
-                .toList(),
-            onChanged: (x) => setState(() => p = x),
-          ),
-          TextField(
-            controller: q,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Quantidade'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final n = _num(q.text.replaceAll(',', '.'));
-              if (n == null || n <= 0 || p == null) return;
-              final a = widget.item.alternatives
-                  .where((x) => x.food.id == f.id)
-                  .firstOrNull;
-              Navigator.pop(
-                c,
-                widget.item.copy(
-                  food: f,
-                  portion: p,
-                  quantity: n,
-                  allowedId: a?.allowedId,
-                ),
-              );
-            },
-            child: const Text('Aplicar'),
-          ),
-        ],
+            const SizedBox(height: 14),
+            TextField(
+              controller: q,
+              inputFormatters: const [DecimalInputFormatter()],
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Número de porções',
+                helperText: p?.quantity == null || p?.unit == null
+                    ? null
+                    : '= ${_fmt(qty * p!.quantity!)} ${p!.unit}',
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'MACROS',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: Column(
+                children: [
+                  for (final (key, label, unit) in _macroRows)
+                    ListTile(
+                      title: Text(label),
+                      trailing: Text(
+                        p?.macros[key] == null
+                            ? 'não disponível'
+                            : '${formatDecimal(p!.macros[key]! * qty, maxDecimals: 1)} $unit',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: () {
+                final n = parseDecimal(q.text);
+                if (n == null || n <= 0 || p == null) return;
+                Navigator.pop(
+                  c,
+                  widget.item.copy(food: f, portion: p, quantity: n),
+                );
+              },
+              child: const Text('Aplicar'),
+            ),
+            if (widget.onSwap != null)
+              TextButton.icon(
+                onPressed: widget.onSwap,
+                icon: const Icon(Icons.swap_horiz_rounded),
+                label: const Text('Trocar alimento'),
+              ),
+            if (widget.onRemove != null)
+              TextButton(
+                onPressed: widget.onRemove,
+                child: const Text('Remover'),
+              ),
+          ],
+        ),
       ),
     );
   }
-}
-
-class _Picker extends StatefulWidget {
-  const _Picker({required this.load, required this.page});
-  final Future<_Food> Function(String) load;
-  final Future<Map<String, dynamic>> Function(int) page;
-  @override
-  State<_Picker> createState() => _PickerState();
-}
-
-class _PickerState extends State<_Picker> {
-  var page = 0, total = 1, loading = false;
-  final foods = <Map<String, dynamic>>[];
-  String? error;
-  @override
-  void initState() {
-    super.initState();
-    more();
-  }
-
-  Future<void> more() async {
-    if (loading || page >= total) return;
-    setState(() {
-      loading = true;
-      error = null;
-    });
-    try {
-      final d = await widget.page(page);
-      if (!mounted) return;
-      setState(() {
-        foods.addAll((d['content'] as List).cast<Map<String, dynamic>>());
-        total = d['totalPages'] as int;
-        page++;
-      });
-    } on DioException catch (exception) {
-      if (mounted) setState(() => error = _message(exception));
-    } on FormatException {
-      if (mounted)
-        setState(() => error = 'Não foi possível carregar o catálogo.');
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext c) => Padding(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text('Adicionar alimento'),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 400),
-          child: ListView(
-            children: [
-              for (final x in foods)
-                ListTile(
-                  title: Text(x['name'] as String),
-                  onTap: () async {
-                    setState(() {
-                      loading = true;
-                      error = null;
-                    });
-                    try {
-                      final f = await widget.load(x['id'] as String);
-                      if (c.mounted) Navigator.pop(c, f);
-                    } on DioException catch (exception) {
-                      if (mounted) setState(() => error = _message(exception));
-                    } on FormatException {
-                      if (mounted)
-                        setState(
-                          () => error = 'Não foi possível abrir este alimento.',
-                        );
-                    } finally {
-                      if (mounted) setState(() => loading = false);
-                    }
-                  },
-                ),
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    children: [
-                      Text(error!, textAlign: TextAlign.center),
-                      TextButton(
-                        onPressed: more,
-                        child: const Text('Tentar novamente'),
-                      ),
-                    ],
-                  ),
-                ),
-              if (page < total)
-                OutlinedButton(
-                  onPressed: loading ? null : more,
-                  child: Text(loading ? 'Carregando…' : 'Carregar mais'),
-                ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 num? _num(Object? v) => v is num
@@ -581,8 +767,16 @@ num? _num(Object? v) => v is num
     : v is String
     ? num.tryParse(v)
     : null;
-String _fmt(num n) =>
-    n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+String _fmt(num n) => formatDecimal(n);
+
+/// Number of portions of a stored/planned line: quantity × multiplier ÷ the
+/// portion's own size (the same scaling the server applies to nutrients).
+num _portionCount(Map<String, dynamic> d, _Portion? portion) {
+  final base = (_num(d['quantity']) ?? 0) * (_num(d['multiplier']) ?? 1);
+  final size = portion?.quantity;
+  return size == null || size == 0 ? base : base / size;
+}
+
 String _message(DioException e) => e.response?.statusCode == 409
     ? 'O planejamento mudou. Atualize antes de confirmar.'
     : 'Não foi possível concluir o registro.';

@@ -34,8 +34,15 @@ class TodayRepositoryImpl implements TodayRepository {
       final plans = await _authorized(_api.plans);
       final day = _civilDate(date);
       final meals = <TodayMeal>[];
+      final periods = <TodayPeriod>[];
       for (final rawPlan in plans) {
         final plan = _object(rawPlan);
+        periods.add(
+          TodayPeriod(
+            start: DateTime.parse(plan['periodStart'] as String),
+            end: DateTime.parse(plan['periodEnd'] as String),
+          ),
+        );
         if ((plan['periodStart'] as String).compareTo(day) > 0 ||
             (plan['periodEnd'] as String).compareTo(day) < 0) {
           continue;
@@ -60,26 +67,32 @@ class TodayRepositoryImpl implements TodayRepository {
         final time = (a.time ?? '').compareTo(b.time ?? '');
         return time != 0 ? time : a.order.compareTo(b.order);
       });
-      if (meals.isEmpty) return const TodayData(meals: [], latestEvents: {});
+      periods.sort((a, b) => a.start.compareTo(b.start));
+      final summary = await _summary(day);
+      if (meals.isEmpty) {
+        return TodayData(
+          meals: const [],
+          latestEvents: const {},
+          availablePeriods: periods,
+          summary: summary,
+        );
+      }
 
-      // The patient history is newest first. Continue until all today's meals
-      // have a latest event or the server has no more pages.
       final ids = meals.map((meal) => meal.id).toSet();
       final latest = <String, CompletionEvent>{};
-      var page = 0;
-      while (latest.length < ids.length) {
-        final result = await _authorized((auth) => _api.events(auth, page));
-        final content = result['content'] as List<dynamic>;
-        for (final raw in content) {
-          final event = _event(_object(raw));
-          if (ids.contains(event.plannedMealId)) {
-            latest.putIfAbsent(event.plannedMealId, () => event);
-          }
+      for (final raw in await _authorized((a) => _api.executions(a, day))) {
+        final execution = _object(raw);
+        final mealId = execution['plannedMealId'] as String?;
+        if (mealId != null && ids.contains(mealId)) {
+          latest[mealId] = _event(execution);
         }
-        page++;
-        if (page >= (result['totalPages'] as int) || content.isEmpty) break;
       }
-      return TodayData(meals: meals, latestEvents: latest);
+      return TodayData(
+        meals: meals,
+        latestEvents: latest,
+        availablePeriods: periods,
+        summary: summary,
+      );
     } on TodayFailure {
       rethrow;
     } on DioException catch (error) {
@@ -92,6 +105,33 @@ class TodayRepositoryImpl implements TodayRepository {
       throw const TodayFailure(
         'Não foi possível ler as refeições. Tente novamente.',
       );
+    }
+  }
+
+  /// The summary is secondary: if it fails the day still loads without it.
+  Future<DailySummary?> _summary(String day) async {
+    try {
+      final data = await _authorized((a) => _api.dailySummary(a, day));
+      Map<String, NutrientAmount> totals(Object? raw) => {
+        for (final e in (raw as Map<String, dynamic>? ?? const {}).entries)
+          e.key: NutrientAmount(
+            _amount(_object(e.value)['amount']),
+            (_object(e.value)['unit'] as String?) ?? '',
+          ),
+      };
+      return DailySummary(
+        prescribed: totals(data['prescribed']),
+        planned: totals(data['planned']),
+        realized: totals(data['realized']),
+      );
+    } on DioException {
+      return null;
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    } on TodayFailure {
+      return null;
     }
   }
 
@@ -108,13 +148,29 @@ class TodayRepositoryImpl implements TodayRepository {
         : _PendingCommand(type, _newKey(), DateTime.now().toUtc());
     _pending[meal.id] = command;
     try {
-      final result = await _authorized(
-        (auth) => _api.record(auth, meal.id, command.key, {
-          'eventType': _wireType(type),
-          'occurredAt': command.occurredAt.toIso8601String(),
-          'substitutions': <Object>[],
-        }),
-      );
+      final result = await _authorized((auth) async {
+        final items = type == CompletionType.completed
+            ? await _plannedItems(auth, meal.id)
+            : const <Map<String, dynamic>>[];
+        final payload = {
+          'date': meal.date,
+          'plannedMealId': meal.id,
+          'items': items,
+        };
+        final current = (await _api.executions(
+          auth,
+          meal.date,
+        )).map(_object).where((e) => e['plannedMealId'] == meal.id).firstOrNull;
+        return current == null
+            ? _api.createExecution(auth, command.key, payload)
+            : _api.replaceExecution(
+                auth,
+                current['id'] as String,
+                current['version'] as int,
+                command.key,
+                payload,
+              );
+      });
       _pending.remove(meal.id);
       return _event(result);
     } on TodayFailure {
@@ -131,6 +187,35 @@ class TodayRepositoryImpl implements TodayRepository {
       );
     }
   }
+
+  /// Consumption identical to the prescription: every planned item as planned.
+  Future<List<Map<String, dynamic>>> _plannedItems(
+    String auth,
+    String mealId,
+  ) async {
+    final log = await _api.foodLog(auth, mealId);
+    return [
+      for (final raw in log['items'] as List<dynamic>)
+        () {
+          final item = _object(raw);
+          final portion = item['catalogPortionId'];
+          final unit = item['unit'];
+          if (portion == null || unit == null) {
+            throw const TodayFailure(
+              'Abra a refeição para informar porção e quantidade.',
+            );
+          }
+          return {
+            'foodId': item['catalogFoodId'],
+            'portionId': portion,
+            'unit': unit,
+            'quantity': item['quantity'],
+            'multiplier': item['multiplier'] ?? 1,
+            'plannedItemId': item['plannedItemId'],
+          };
+        }(),
+    ];
+  }
 }
 
 class _PendingCommand {
@@ -144,23 +229,22 @@ class _PendingCommand {
 String _civilDate(DateTime date) =>
     '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
-String _wireType(CompletionType type) => switch (type) {
-  CompletionType.completed => 'COMPLETED',
-  CompletionType.notCompleted => 'NOT_COMPLETED',
-  CompletionType.substituted => 'SUBSTITUTED',
-};
+CompletionEvent _event(Map<String, dynamic> data) {
+  final items = (data['items'] as List<dynamic>).map(_object).toList();
+  return CompletionEvent(
+    plannedMealId: data['plannedMealId'] as String,
+    type: items.isEmpty
+        ? CompletionType.notCompleted
+        : items.any((i) => i['allowedSubstitutionId'] != null)
+        ? CompletionType.substituted
+        : CompletionType.completed,
+    occurredAt: DateTime.parse(data['createdAt'] as String),
+    createdAt: DateTime.parse(data['updatedAt'] as String),
+  );
+}
 
-CompletionEvent _event(Map<String, dynamic> data) => CompletionEvent(
-  plannedMealId: data['plannedMealId'] as String,
-  type: switch (data['eventType']) {
-    'COMPLETED' => CompletionType.completed,
-    'NOT_COMPLETED' => CompletionType.notCompleted,
-    'SUBSTITUTED' => CompletionType.substituted,
-    _ => throw const FormatException('Tipo de evento inválido.'),
-  },
-  occurredAt: DateTime.parse(data['occurredAt'] as String),
-  createdAt: DateTime.parse(data['createdAt'] as String),
-);
+num _amount(Object? value) =>
+    value is num ? value : num.tryParse('$value') ?? 0;
 
 Map<String, dynamic> _object(Object? value) {
   if (value is Map<String, dynamic>) return value;

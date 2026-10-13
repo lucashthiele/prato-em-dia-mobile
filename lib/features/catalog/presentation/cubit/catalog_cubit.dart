@@ -11,6 +11,7 @@ class CatalogState {
     this.hasMore = false,
     this.error,
     this.moreError,
+    this.query = '',
   });
 
   final List<FoodSummary> foods;
@@ -20,6 +21,7 @@ class CatalogState {
   final bool hasMore;
   final String? error;
   final String? moreError;
+  final String query;
 }
 
 class CatalogCubit extends Cubit<CatalogState> {
@@ -28,17 +30,33 @@ class CatalogCubit extends Cubit<CatalogState> {
   final CatalogRepository _repository;
   int _nextPage = 0;
   int _generation = 0;
+  String _query = '';
+
+  Future<void> search(String text) {
+    final next = text.trim();
+    if (next == _query) return Future.value();
+    _query = next;
+    return load();
+  }
 
   Future<void> load() async {
     final generation = ++_generation;
     _nextPage = 0;
-    emit(CatalogState(foods: state.foods, loading: true, loaded: state.loaded));
+    emit(
+      CatalogState(
+        query: _query,
+        foods: state.foods,
+        loading: true,
+        loaded: state.loaded,
+      ),
+    );
     try {
-      final result = await _repository.list(0);
+      final result = await _repository.list(0, query: _query);
       if (isClosed || generation != _generation) return;
       _nextPage = 1;
       emit(
         CatalogState(
+          query: _query,
           foods: result.foods,
           loaded: true,
           hasMore: _nextPage < result.totalPages,
@@ -48,6 +66,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       if (isClosed || generation != _generation) return;
       emit(
         CatalogState(
+          query: _query,
           foods: state.foods,
           loaded: state.loaded,
           hasMore: state.hasMore,
@@ -69,6 +88,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     final page = _nextPage;
     emit(
       CatalogState(
+        query: _query,
         foods: state.foods,
         loaded: true,
         hasMore: true,
@@ -76,12 +96,13 @@ class CatalogCubit extends Cubit<CatalogState> {
       ),
     );
     try {
-      final result = await _repository.list(page);
+      final result = await _repository.list(page, query: _query);
       if (isClosed || generation != _generation) return;
       _nextPage = page + 1;
       final seen = state.foods.map((food) => food.id).toSet();
       emit(
         CatalogState(
+          query: _query,
           foods: [
             ...state.foods,
             ...result.foods.where((food) => seen.add(food.id)),
@@ -94,6 +115,7 @@ class CatalogCubit extends Cubit<CatalogState> {
       if (isClosed || generation != _generation) return;
       emit(
         CatalogState(
+          query: _query,
           foods: state.foods,
           loaded: true,
           hasMore: true,
@@ -107,6 +129,7 @@ class CatalogCubit extends Cubit<CatalogState> {
     if (state.moreError == null) return;
     emit(
       CatalogState(
+        query: _query,
         foods: state.foods,
         loaded: state.loaded,
         hasMore: state.hasMore,

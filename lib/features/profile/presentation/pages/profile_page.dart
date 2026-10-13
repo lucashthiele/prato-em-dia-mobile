@@ -119,7 +119,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) => BlocProvider.value(
     value: _cubit,
     child: Scaffold(
-      appBar: AppBar(title: const Text('Perfil')),
+      appBar: AppBar(title: const Text('Meu perfil')),
       body: BlocBuilder<ProfileCubit, ProfileState>(
         builder: (context, state) {
           if (state.status == ProfileStatus.loading) {
@@ -153,14 +153,51 @@ class _ProfilePageState extends State<ProfilePage> {
           }
           final profile = state.profile!;
           return SafeArea(
+            bottom: false,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 92),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                28,
+                20,
+                32 + MediaQuery.paddingOf(context).bottom,
+              ),
               children: [
-                Text(
-                  profile.fullName,
-                  style: Theme.of(context).textTheme.headlineSmall,
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .primaryContainer,
+                      foregroundColor: Theme.of(context)
+                          .colorScheme
+                          .onPrimaryContainer,
+                      child: const Icon(Icons.person_rounded, size: 30),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Seu perfil',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                          Text(
+                            profile.fullName,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
                 if (state.errorMessage != null) ...[
                   AppErrorBanner(message: state.errorMessage!),
                   const SizedBox(height: 16),
@@ -170,44 +207,53 @@ class _ProfilePageState extends State<ProfilePage> {
                   const SizedBox(height: 16),
                 ],
                 Text(
-                  'Meus dados',
+                  'MEUS DADOS',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
                 if (_editing) _editForm(state) else _readOnlyProfile(profile),
                 const SizedBox(height: 28),
                 Text(
-                  'Nutricionista',
+                  'NUTRICIONISTA',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (state.isLoadingRelationship)
-                          const LinearProgressIndicator(
-                            semanticsLabel: 'Carregando vínculo',
-                          )
-                        else if (state.relationshipError != null) ...[
-                          AppErrorBanner(message: state.relationshipError!),
-                          TextButton(
-                            onPressed: _cubit.loadRelationship,
-                            child: const Text('Tentar novamente'),
-                          ),
-                        ] else if (state.relationship == null)
-                          const Text('Nenhum vínculo ativo no momento.')
-                        else
-                          Text(
-                            state.relationship!.nutritionistFullName,
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                      ],
+                if (state.isLoadingRelationship)
+                  const LinearProgressIndicator(
+                    semanticsLabel: 'Carregando vínculo',
+                  )
+                else if (state.relationshipError != null) ...[
+                  AppErrorBanner(message: state.relationshipError!),
+                  TextButton(
+                    onPressed: _cubit.loadRelationship,
+                    child: const Text('Tentar novamente'),
+                  ),
+                ] else if (state.relationship == null)
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.person_outline_rounded),
+                    title: Text('Nenhum vínculo ativo no momento.'),
+                  )
+                else
+                  Card(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      leading: CircleAvatar(
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer,
+                        foregroundColor: Theme.of(context)
+                            .colorScheme
+                            .onPrimaryContainer,
+                        child: const Icon(Icons.health_and_safety_outlined),
+                      ),
+                      title: Text(state.relationship!.nutritionistFullName),
+                      subtitle: const Text('Nutricionista responsável'),
                     ),
                   ),
-                ),
                 const SizedBox(height: 28),
                 OutlinedButton.icon(
                   onPressed: _loggingOut || state.isSaving ? null : _logout,
@@ -227,31 +273,27 @@ class _ProfilePageState extends State<ProfilePage> {
     ),
   );
 
-  Widget _readOnlyProfile(PatientProfile profile) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _detail('Nome completo', profile.fullName),
-          const SizedBox(height: 16),
-          _detail(
-            'Telefone',
-            profile.phone?.isNotEmpty == true
-                ? profile.phone!
-                : 'Não informado',
-          ),
-          const SizedBox(height: 16),
-          _detail('Data de nascimento', _displayDate(profile.birthDate)),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: () => _startEditing(profile),
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Editar dados'),
-          ),
-        ],
+  Widget _readOnlyProfile(PatientProfile profile) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _detail('Nome completo', profile.fullName),
+      const Divider(height: 24),
+      _detail(
+        'Telefone',
+        profile.phone?.isNotEmpty == true ? profile.phone! : 'Não informado',
       ),
-    ),
+      const Divider(height: 24),
+      _detail('Data de nascimento', _displayDate(profile.birthDate)),
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => _startEditing(profile),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Editar dados'),
+        ),
+      ),
+    ],
   );
 
   Widget _detail(String label, String value) => Column(

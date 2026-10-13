@@ -77,6 +77,7 @@ class CatalogPage {
 }
 
 abstract interface class CatalogRepository {
-  Future<CatalogPage> list(int page);
+  /// [query] filters by name on the server; null or blank lists everything.
+  Future<CatalogPage> list(int page, {String? query});
   Future<FoodDetails> get(String id);
 }

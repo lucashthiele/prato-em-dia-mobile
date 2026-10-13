@@ -25,17 +25,20 @@ class TodayCubit extends Cubit<TodayState> {
 
   final TodayRepository _repository;
   final DateTime Function() _now;
+  int _loadGeneration = 0;
 
-  Future<void> load() async {
-    if (state.loading) return;
-    emit(TodayState(data: state.data, loading: true));
+  Future<void> load({DateTime? date, bool clearData = false}) async {
+    final generation = ++_loadGeneration;
+    emit(TodayState(data: clearData ? null : state.data, loading: true));
     try {
-      final data = await _repository.load(_now());
-      if (isClosed) return;
+      final data = await _repository.load(date ?? _now());
+      if (isClosed || generation != _loadGeneration) return;
       emit(TodayState(data: data));
     } on TodayFailure catch (error) {
-      if (isClosed) return;
-      emit(TodayState(data: state.data, error: error.message));
+      if (isClosed || generation != _loadGeneration) return;
+      emit(
+        TodayState(data: clearData ? null : state.data, error: error.message),
+      );
     }
   }
 
@@ -52,6 +55,8 @@ class TodayCubit extends Cubit<TodayState> {
             data: TodayData(
               meals: current.meals,
               latestEvents: {...current.latestEvents, meal.id: event},
+              availablePeriods: current.availablePeriods,
+              summary: current.summary,
             ),
           ),
         );

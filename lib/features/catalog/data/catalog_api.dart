@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import '../../auth/domain/auth_session.dart';
 
 abstract interface class CatalogRemoteDataSource {
-  Future<Map<String, dynamic>> list(int page);
+  Future<Map<String, dynamic>> list(int page, {String? query});
   Future<Map<String, dynamic>> get(String id);
 }
 
@@ -33,10 +33,14 @@ class CatalogApi implements CatalogRemoteDataSource {
   }
 
   @override
-  Future<Map<String, dynamic>> list(int page) => _request(
+  Future<Map<String, dynamic>> list(int page, {String? query}) => _request(
     (authorization) => _dio.get<Map<String, dynamic>>(
       '/api/v1/foods',
-      queryParameters: {'page': page, 'size': 20},
+      queryParameters: {
+        'page': page,
+        'size': 20,
+        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+      },
       options: Options(headers: {'Authorization': authorization}),
     ),
   );
