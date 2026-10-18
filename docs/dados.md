@@ -9,7 +9,7 @@
 | Catálogo | `food`, `food_portion`, `food_portion_nutrient`, `catalog_import_run` |
 | Prescrição | `prescription`, `prescription_version`, `prescribed_meal`, `prescribed_meal_item`, `allowed_substitution` |
 | Planejamento | `weekly_plan`, `planned_meal`, `planned_meal_item`, `weekly_planning_preference` |
-| Realização | `meal_completion_event` |
+| Realização | execução de refeição mutável e versionada (substitui `meal_completion_event`; nomes das tabelas a confirmar nas migrations) |
 
 Papéis: `PATIENT`, `NUTRITIONIST`, `ADMIN`. A conta possui estado ativo/inativo.
 Um paciente pode ter no máximo um vínculo ativo. Uma prescrição possui versões;
@@ -25,8 +25,9 @@ e nutrientes por porção. Importações são auditadas por `catalog_import_run`
 
 - O plano semanal guarda a versão publicada de origem.
 - A lista de compras é projeção recalculável, não fonte de verdade.
-- Eventos de conclusão são append-only; correções precisam de novo evento/ação
-  auditada.
+- Execuções de refeição são mutáveis e versionadas (controle otimista por
+  `version`); correções editam a execução. Trilha de auditoria fica para
+  `audit_event`.
 - Assinatura é apenas estado comercial simulado no MVP.
 
 ## Convenções

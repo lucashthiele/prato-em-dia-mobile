@@ -16,7 +16,7 @@ pasta de projeto no Google Drive e confrontado com este repositório Flutter.
 - Consulte [plano de implementação do redesign](plano-implementacao-redesign-telas.md)
   para a direção visual e os fluxos alvo.
 - Consulte [dependências de backend do redesign](dependencias-backend-redesign.md)
-  antes de integrar resumo diário, períodos, busca e edição de execuções.
+  antes de integrar períodos, remoção, restauração e realocação de execuções.
 
 Estes documentos são uma síntese, não uma cópia dos originais. Quando uma
 decisão precisar de precisão contratual (payload, OpenAPI ou migration), a
@@ -38,8 +38,8 @@ fonte de autoridade é o repositório/contrato do backend, não esta documentaç
 O app é Flutter, usa `dio`, `flutter_bloc` e `flutter_secure_storage`. Já há
 login, restauração/renovação de sessão, logout e troca obrigatória de senha.
 O ponto de entrada e a árvore de autenticação estão em `lib/main.dart`;
-funcionalidades de semana, compras, prescrição e tracking ainda não existem
-neste worktree.
+Hoje, semana, registro de execuções, catálogo e perfil também existem. Compras
+e a leitura detalhada da prescrição ainda não.
 
 As propostas antigas mencionam `get_it`, `go_router`, `shared_preferences`,
 Freezed e alguns pacotes de teste. Eles **não** são dependências atuais no
