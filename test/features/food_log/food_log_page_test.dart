@@ -17,6 +17,7 @@ void main() {
   ) async {
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
     List<dynamic>? savedItems;
+    Map<String, dynamic>? savedBody;
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
@@ -62,6 +63,7 @@ void main() {
             };
           } else if (options.method == 'POST' &&
               options.path.endsWith('/meal-executions')) {
+            savedBody = options.data as Map<String, dynamic>;
             savedItems =
                 (options.data as Map<String, dynamic>)['items']
                     as List<dynamic>;
@@ -95,6 +97,8 @@ void main() {
                       mealId: 'meal-1',
                       mealName: 'Café da manhã',
                       date: '2026-10-10',
+                      mealType: 'BREAKFAST',
+                      plannedTime: '07:30:00',
                       session: _session,
                       renewSession: () async => _session,
                       dio: dio,
@@ -131,6 +135,8 @@ void main() {
 
     await tester.tap(find.text('Confirmar consumo'));
     await tester.pumpAndSettle();
+    expect(savedBody!['time'], '07:30');
+    expect(savedBody!['mealType'], 'BREAKFAST');
     expect(savedItems, isNotNull);
     expect(savedItems, isEmpty);
 
@@ -218,6 +224,8 @@ void main() {
           mealId: 'meal-1',
           mealName: 'Almoço',
           date: '2026-10-10',
+          mealType: 'LUNCH',
+          plannedTime: '12:00:00',
           session: _session,
           renewSession: () async => _session,
           dio: dio,

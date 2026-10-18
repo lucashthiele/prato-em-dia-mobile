@@ -39,7 +39,7 @@ O contrato atual inclui:
 
 As execuções são mutáveis. O `POST` cria e exige `Idempotency-Key`; o `PUT`
 substitui a execução inteira e exige `If-Match` com a versão atual, além de
-`Idempotency-Key`. O corpo traz `date`, `plannedMealId` e `items`, e cada item
+`Idempotency-Key`. O corpo traz `date`, `plannedMealId`, `time` (`HH:mm`), `mealType` e `items`, e cada item
 traz `foodId`, `portionId`, `unit`, `quantity`, `multiplier`, `plannedItemId` e,
 no modo de substituições, `allowedSubstitutionId`. Uma execução com `items`
 vazio representa refeição não realizada.

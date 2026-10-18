@@ -152,15 +152,23 @@ class TodayRepositoryImpl implements TodayRepository {
         final items = type == CompletionType.completed
             ? await _plannedItems(auth, meal.id)
             : const <Map<String, dynamic>>[];
-        final payload = {
-          'date': meal.date,
-          'plannedMealId': meal.id,
-          'items': items,
-        };
         final current = (await _api.executions(
           auth,
           meal.date,
         )).map(_object).where((e) => e['plannedMealId'] == meal.id).firstOrNull;
+        // Keep a time the patient already edited; a meal planned without one
+        // is recorded at the current time, since the server requires it.
+        final time = (current?['time'] as String? ?? meal.time)?.substring(
+          0,
+          5,
+        );
+        final payload = {
+          'date': meal.date,
+          'plannedMealId': meal.id,
+          'time': time ?? _clock(DateTime.now()),
+          'mealType': meal.mealType,
+          'items': items,
+        };
         return current == null
             ? _api.createExecution(auth, command.key, payload)
             : _api.replaceExecution(
@@ -225,6 +233,9 @@ class _PendingCommand {
   final String key;
   final DateTime occurredAt;
 }
+
+String _clock(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
 String _civilDate(DateTime date) =>
     '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
