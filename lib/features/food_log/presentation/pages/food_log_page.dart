@@ -113,12 +113,18 @@ class FoodLogPage extends StatefulWidget {
     required this.date,
     required this.session,
     required this.renewSession,
+    this.mealType,
+    this.plannedTime,
     this.dio,
     super.key,
   });
 
   /// Civil date (`yyyy-MM-dd`) of the planned meal; executions are dated.
   final String mealId, mealName, date;
+
+  /// Category (`BREAKFAST`, `LUNCH`, `SNACK`, `DINNER`) and planned `HH:mm`
+  /// time of the meal, when the caller knows them.
+  final String? mealType, plannedTime;
   final AuthSession session;
   final Future<AuthSession?> Function() renewSession;
   final Dio? dio;
@@ -141,6 +147,9 @@ class _State extends State<FoodLogPage> {
   // Active execution of this meal, when one was already saved.
   Map<String, dynamic>? execution;
   _Mode? mode;
+  // Time of the execution as `HH:mm`: the saved one, else the planned one,
+  // else the current time.
+  late String time;
   List<_Item>? items;
   String? error;
   bool saving = false;
@@ -159,6 +168,10 @@ class _State extends State<FoodLogPage> {
   @override
   void initState() {
     super.initState();
+    final now = TimeOfDay.now();
+    time =
+        _hhmm(widget.plannedTime) ??
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     load();
   }
 
@@ -258,6 +271,7 @@ class _State extends State<FoodLogPage> {
         .firstOrNull;
     execution = current;
     if (current == null) return planned;
+    time = _hhmm(current['time'] as String?) ?? time;
     final consumed = (current['items'] as List<dynamic>)
         .cast<Map<String, dynamic>>();
     final byPlannedId = {
@@ -456,6 +470,23 @@ class _State extends State<FoodLogPage> {
     if (y != null && mounted) setState(() => items = [...items!, y]);
   }
 
+  Future<void> pickTime() async {
+    final parts = time.split(':');
+    final chosen = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: int.parse(parts[0]),
+        minute: int.parse(parts[1]),
+      ),
+      helpText: 'Hora da refeição',
+    );
+    if (chosen == null || !mounted) return;
+    setState(
+      () => time =
+          '${chosen.hour.toString().padLeft(2, '0')}:${chosen.minute.toString().padLeft(2, '0')}',
+    );
+  }
+
   Future<void> save() async {
     if (items!.any((x) => !x.complete)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -470,6 +501,8 @@ class _State extends State<FoodLogPage> {
       final body = <String, dynamic>{
         'date': widget.date,
         'plannedMealId': widget.mealId,
+        'time': time,
+        if (widget.mealType != null) 'mealType': widget.mealType,
         'items': [
           for (final x in items!.where((x) => !x.removed))
             {
@@ -577,6 +610,12 @@ class _State extends State<FoodLogPage> {
                     ),
                     const SizedBox(height: 16),
                   ],
+                  OutlinedButton.icon(
+                    onPressed: saving ? null : pickTime,
+                    icon: const Icon(Icons.schedule_rounded),
+                    label: Text('Hora: $time'),
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     'ALIMENTOS',
                     style: Theme.of(c).textTheme.titleMedium?.copyWith(
@@ -761,6 +800,10 @@ class _EditorState extends State<_Editor> {
     );
   }
 }
+
+/// `HH:mm` of a server time such as `13:30:00`; null when absent.
+String? _hhmm(String? v) =>
+    v == null || v.length < 5 ? null : v.substring(0, 5);
 
 num? _num(Object? v) => v is num
     ? v

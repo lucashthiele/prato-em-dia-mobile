@@ -68,6 +68,8 @@ class _PatientShellState extends State<PatientShell> {
               mealName: meal.name,
               date:
                   '${meal.date.year.toString().padLeft(4, '0')}-${meal.date.month.toString().padLeft(2, '0')}-${meal.date.day.toString().padLeft(2, '0')}',
+              mealType: meal.mealType,
+              plannedTime: meal.time,
               session: widget.session,
               renewSession: widget.renewSession,
             ),

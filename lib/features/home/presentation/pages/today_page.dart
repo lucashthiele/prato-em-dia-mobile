@@ -100,6 +100,8 @@ class _TodayPageState extends State<TodayPage> {
             mealId: meal.id,
             mealName: meal.name,
             date: meal.date,
+            mealType: meal.mealType,
+            plannedTime: meal.time,
             session: widget.session!,
             renewSession: widget.renewSession!,
           ),
