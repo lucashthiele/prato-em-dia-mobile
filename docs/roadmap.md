@@ -19,7 +19,7 @@
 2. Integrar prescrição vigente em modo leitura.
 3. Completar organização da semana e substituições autorizadas.
 4. Acrescentar compras quando o backend disponibilizar o contrato.
-5. Acrescentar histórico dedicado; o registro básico já usa idempotência.
+5. Acrescentar histórico dedicado; o registro já usa execuções mutáveis com idempotência e `If-Match`.
 6. Validar o ciclo central com teste integrado:
    login → prescrição → semana → substituição → compras → execução.
 

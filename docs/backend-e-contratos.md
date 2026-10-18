@@ -14,7 +14,8 @@ expõe casos de uso e portas; `infrastructure` contém persistência/segurança;
 - Prescrições versionadas, refeições, itens, substituições permitidas e
   publicação imutável.
 - Planejamento semanal, preferência de geração automática e confirmação.
-- Eventos imutáveis de realização e histórico paginado do paciente.
+- Execuções de refeição mutáveis e versionadas (`meal-executions`), com resumo
+  nutricional diário. Substituem os antigos eventos imutáveis de conclusão.
 
 Rotas importantes já previstas/implementadas incluem `POST /auth/login`,
 `POST /auth/refresh`, `POST /auth/logout`, `GET /me`, `PUT /me`,
@@ -29,13 +30,28 @@ O contrato atual inclui:
 - `POST`/`GET /patients/me/weekly-plans`, `GET`/`PATCH /weekly-plans/{planId}`
   e `POST /weekly-plans/{planId}/confirm`;
 - `GET`/`PUT /patients/me/weekly-planning-preference`;
-- `POST`/`GET /planned-meals/{plannedMealId}/completion-events` e
-  `GET /patients/me/completion-events`;
+- `GET /planned-meals/{plannedMealId}/food-log`: itens da refeição e modo
+  autoritativo (`RESTRICTED`, `SUBSTITUTIONS_ONLY` ou `FREE`);
+- `GET /patients/me/meal-executions?date=`, `POST /patients/me/meal-executions`
+  e `PUT /patients/me/meal-executions/{id}`;
+- `GET /patients/me/daily-nutrition-summary?date=`;
 - resumo de realização para o nutricionista.
 
-O `POST` de realização exige `Idempotency-Key`. Compras não possui endpoint
-atual. Confirmar payloads e status no OpenAPI gerado pelo backend antes de
-alterar a integração.
+As execuções são mutáveis. O `POST` cria e exige `Idempotency-Key`; o `PUT`
+substitui a execução inteira e exige `If-Match` com a versão atual, além de
+`Idempotency-Key`. O corpo traz `date`, `plannedMealId` e `items`, e cada item
+traz `foodId`, `portionId`, `unit`, `quantity`, `multiplier`, `plannedItemId` e,
+no modo de substituições, `allowedSubstitutionId`. Uma execução com `items`
+vazio representa refeição não realizada.
+
+Os endpoints `completion-events` (`POST`/`GET /planned-meals/{id}/completion-events`
+e `GET /patients/me/completion-events`) foram removidos do backend. O app não
+os usa mais.
+
+Compras não possui endpoint atual. Remoção, restauração e realocação de
+execução não são usadas pelo app e não estão confirmadas; verificar no OpenAPI
+gerado pelo backend antes de integrar. Confirmar payloads e status no OpenAPI
+antes de alterar a integração.
 
 ## Regras de integração
 
@@ -44,5 +60,6 @@ alterar a integração.
 - O backend valida vínculo, autoria, papel, versão e substituições autorizadas.
 - Mutações de publicação e recálculo devem ser transacionais.
 - `409` representa conflito de estado/versão; a UI deve recarregar o recurso.
-- Eventos de realização exigem chave de idempotência por intenção; repetir a
-  mesma chave e payload devolve o evento já criado.
+- Criação e substituição de execuções exigem chave de idempotência por intenção;
+  repetir a mesma chave e payload devolve a execução já gravada. A substituição
+  usa controle otimista: `If-Match` com a versão lida, e `409` se ela mudou.

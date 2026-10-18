@@ -18,8 +18,10 @@ vínculo ativo. A API é acessada por `Dio`; estado usa Cubits com
 Também há a tela dedicada de registro de consumo aberta a partir de Hoje. Ela
 obtém os itens e o modo autoritativo em `GET /planned-meals/{id}/food-log`,
 resolve nomes, porções e kcal pelo catálogo existente e mantém o rascunho
-somente no aparelho. A confirmação é um `POST` idempotente e append-only de
-`completion-events`; ela não modifica planejamento ou prescrição. Porções e
+somente no aparelho. A confirmação grava uma execução mutável em `meal-executions`: `POST`
+idempotente na primeira vez e `PUT` com `If-Match` (versão lida) e
+`Idempotency-Key` nas edições seguintes. A execução não modifica planejamento
+ou prescrição. Porções e
 quantidades são editáveis; kcal só aparece quando o catálogo a disponibiliza.
 No modo de substituições, a UI apresenta apenas alternativas autorizadas pelo
 servidor. Em FREE, o seletor pagina o catálogo existente, abre o detalhe do
@@ -33,7 +35,7 @@ Os únicos valores aceitos para `mode` no cliente são `RESTRICTED`,
 `SUBSTITUTIONS_ONLY` e `FREE`; qualquer outro valor resulta em erro explícito,
 sem liberar edição em FREE.
 
-O POST exige uma porção ativa do catálogo em toda linha, inclusive uma linha
+O POST/PUT exige uma porção ativa do catálogo em toda linha, inclusive uma linha
 planejada removida com quantidade zero; se houver unidade cadastrada, o app
 envia a unidade da porção selecionada. Com consumo não vazio, o rascunho
 preserva exatamente uma linha por item planejado e pode acrescentar itens FREE
@@ -92,7 +94,9 @@ nutricionista ou administrador.
   altera o conteúdo autoritativo da lista. Após recálculo, preservar somente
   itens estáveis que ainda existam.
 - Ações de realização distinguem: realizada como prescrito, realizada com
-  substituição e não realizada. Elas criam eventos, não editam o plano.
+  substituição e não realizada (execução sem itens). Elas criam ou atualizam a
+  execução da refeição, não editam o plano. Edições enviam `If-Match` com a
+  versão lida; `409` indica que a execução mudou e deve ser recarregada.
 
 ## UX e acessibilidade
 

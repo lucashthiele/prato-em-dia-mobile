@@ -54,9 +54,10 @@ linha de lista, item de refeição, ação principal, confirmação e bottom she
 
 ## Dados e integração
 
-Preservar integrações existentes. Até existirem contratos remotos, usar
-adaptadores simulados somente para resumo nutricional diário, períodos
-disponíveis, busca paginada por termo e execuções editáveis/restauráveis. Os
+Preservar integrações existentes. Resumo diário, busca por termo e execuções
+editáveis já usam contratos remotos. Até existirem contratos remotos para
+remoção, restauração e realocação de execuções, e para períodos disponíveis,
+usar adaptadores simulados somente para essas capacidades. Os
 adaptadores devem implementar interfaces intercambiáveis por fontes remotas e
 não inventar recomendações clínicas.
 
@@ -79,7 +80,7 @@ dispositivos depende de simuladores/emuladores disponíveis no ambiente.
 1. Tokens e componentes semânticos.
 2. Navegação de três destinos e Início com estados coerentes.
 3. Semana e detalhe de refeições.
-4. Execuções editáveis com adaptador simulado, respeitando os modos atuais.
+4. Execuções editáveis (criar e editar já integrados; remover, restaurar e realocar com adaptador simulado), respeitando os modos atuais.
 5. Catálogo com busca paginada simulada e Perfil.
 6. Entrada e estados de autenticação.
 7. Testes, revisão de acessibilidade e validação em dispositivos compactos.

@@ -99,10 +99,11 @@ Todas as rotas usam o prefixo `/api/v1`:
 | --- | --- |
 | Autenticação | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` |
 | Conta | `GET /me`, `PATCH /me/password` |
-| Hoje | `GET /patients/me/daily-nutrition-summary`, `/patients/me/meal-executions` |
+| Hoje | `GET /patients/me/daily-nutrition-summary`, `GET /patients/me/meal-executions` |
 | Semana | `/patients/me/weekly-plans`, `/patients/me/weekly-planning-preference`, `/weekly-plans/{id}`, `/weekly-plans/{id}/confirm` |
 | Registro alimentar | `/planned-meals/{id}/food-log` |
-| Catálogo | `GET /foods`, `GET /foods/{id}` |
+| Execuções | `GET`/`POST /patients/me/meal-executions`, `PUT /patients/me/meal-executions/{id}` |
+| Catálogo | `GET /foods` (com `q`), `GET /foods/{id}` |
 | Perfil | `GET /patients/me/relationship` |
 
 Os detalhes de payload e respostas devem ser validados no contrato OpenAPI do
