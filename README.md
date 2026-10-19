@@ -108,3 +108,12 @@ Todas as rotas usam o prefixo `/api/v1`:
 
 Os detalhes de payload e respostas devem ser validados no contrato OpenAPI do
 backend antes de qualquer alteração de integração.
+
+## Licença
+
+Este projeto é source-available, sob a
+[PolyForm Noncommercial License 1.0.0](LICENSE). Você pode usar, estudar e
+modificar o código para fins não comerciais. Qualquer uso comercial exige
+aprovação prévia e por escrito do titular dos direitos autorais. Para solicitar
+uma licença comercial, entre em contato pelo e-mail
+[lhthiele@outlook.com](mailto:lhthiele@outlook.com).
