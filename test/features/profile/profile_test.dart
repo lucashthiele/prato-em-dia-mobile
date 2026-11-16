@@ -1,18 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prato_em_dia_mobile/features/auth/domain/auth_session.dart';
 import 'package:prato_em_dia_mobile/features/profile/data/profile_api.dart';
 import 'package:prato_em_dia_mobile/features/profile/domain/patient_profile.dart';
 import 'package:prato_em_dia_mobile/features/profile/domain/profile_repository.dart';
 import 'package:prato_em_dia_mobile/features/profile/presentation/pages/profile_page.dart';
-
-const _session = AuthSession(
-  accessToken: 'access',
-  tokenType: 'Bearer',
-  expiresIn: 900,
-  passwordChangeRequired: false,
-);
 
 void main() {
   test(
@@ -25,7 +17,7 @@ void main() {
           onRequest: (options, handler) {
             sent = Map<String, dynamic>.from(options.data as Map);
             expect(options.path, '/api/v1/me');
-            expect(options.headers['Authorization'], 'Bearer access');
+            expect(options.headers.containsKey('Authorization'), isFalse);
             handler.resolve(
               Response(
                 requestOptions: options,
@@ -41,7 +33,7 @@ void main() {
         ),
       );
 
-      final result = await ProfileApi(dio, _session).updateProfile(
+      final result = await ProfileApi(dio).updateProfile(
         const PatientProfile(fullName: ' Ana Lima ', birthDate: '1990-02-03'),
       );
 
@@ -71,53 +63,7 @@ void main() {
         },
       ),
     );
-    expect(await ProfileApi(dio, _session).getRelationship(), isNull);
-  });
-
-  test('401 renews the session and retries once with the new token', () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
-    final tokens = <String?>[];
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          tokens.add(options.headers['Authorization'] as String?);
-          if (tokens.length == 1) {
-            handler.reject(
-              DioException(
-                requestOptions: options,
-                response: Response(requestOptions: options, statusCode: 401),
-                type: DioExceptionType.badResponse,
-              ),
-            );
-          } else {
-            handler.resolve(
-              Response(
-                requestOptions: options,
-                data: {
-                  'fullName': 'Ana Lima',
-                  'phone': null,
-                  'birthDate': null,
-                },
-                statusCode: 200,
-              ),
-            );
-          }
-        },
-      ),
-    );
-    final api = ProfileApi(
-      dio,
-      _session,
-      refreshSession: () async => const AuthSession(
-        accessToken: 'renewed',
-        tokenType: 'Bearer',
-        expiresIn: 900,
-        passwordChangeRequired: false,
-      ),
-    );
-
-    expect((await api.getProfile()).fullName, 'Ana Lima');
-    expect(tokens, ['Bearer access', 'Bearer renewed']);
+    expect(await ProfileApi(dio).getRelationship(), isNull);
   });
 
   testWidgets('shows profile, empty relationship and editable patient fields', (
@@ -126,11 +72,7 @@ void main() {
     final repository = _FakeProfileRepository();
     await tester.pumpWidget(
       MaterialApp(
-        home: ProfilePage(
-          session: _session,
-          onLogout: () async {},
-          repository: repository,
-        ),
+        home: ProfilePage(onLogout: () async {}, repository: repository),
       ),
     );
     await tester.pumpAndSettle();
@@ -162,11 +104,7 @@ void main() {
     final repository = _FakeProfileRepository(failOnce: true);
     await tester.pumpWidget(
       MaterialApp(
-        home: ProfilePage(
-          session: _session,
-          onLogout: () async {},
-          repository: repository,
-        ),
+        home: ProfilePage(onLogout: () async {}, repository: repository),
       ),
     );
     await tester.pumpAndSettle();

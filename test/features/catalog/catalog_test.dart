@@ -8,7 +8,6 @@ import 'package:prato_em_dia_mobile/features/catalog/domain/catalog_repository.d
 import 'package:prato_em_dia_mobile/features/catalog/presentation/cubit/catalog_cubit.dart';
 import 'package:prato_em_dia_mobile/features/catalog/presentation/pages/catalog_screen.dart';
 import 'package:prato_em_dia_mobile/features/catalog/presentation/pages/food_details_screen.dart';
-import 'package:prato_em_dia_mobile/features/auth/domain/auth_session.dart';
 
 void main() {
   test(
@@ -37,26 +36,14 @@ void main() {
   });
 
   test(
-    'renews an expired session once and repeats the catalog request',
+    'lists foods through the shared Dio without an Authorization header',
     () async {
-      final authorizations = <String?>[];
       final dio = Dio()
         ..interceptors.add(
           InterceptorsWrapper(
             onRequest: (options, handler) {
-              authorizations.add(options.headers['Authorization'] as String?);
-              if (authorizations.length == 1) {
-                handler.reject(
-                  DioException(
-                    requestOptions: options,
-                    response: Response<void>(
-                      requestOptions: options,
-                      statusCode: 401,
-                    ),
-                  ),
-                );
-                return;
-              }
+              expect(options.headers.containsKey('Authorization'), isFalse);
+              expect(options.queryParameters['q'], 'arroz');
               handler.resolve(
                 Response<Map<String, dynamic>>(
                   requestOptions: options,
@@ -67,30 +54,10 @@ void main() {
             },
           ),
         );
-      var renewals = 0;
-      final api = CatalogApi(
-        dio,
-        const AuthSession(
-          accessToken: 'old-token',
-          tokenType: 'Bearer',
-          expiresIn: 3600,
-          passwordChangeRequired: false,
-        ),
-        () async {
-          renewals++;
-          return const AuthSession(
-            accessToken: 'new-token',
-            tokenType: 'Bearer',
-            expiresIn: 3600,
-            passwordChangeRequired: false,
-          );
-        },
-      );
 
-      await api.list(0);
+      final data = await CatalogApi(dio).list(0, query: ' arroz ');
 
-      expect(renewals, 1);
-      expect(authorizations, ['Bearer old-token', 'Bearer new-token']);
+      expect(data['totalPages'], 0);
     },
   );
 

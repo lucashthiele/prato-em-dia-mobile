@@ -10,10 +10,7 @@ import '../cubit/login_state.dart';
 import '../widgets/auth_page_shell.dart';
 import '../widgets/auth_password_field.dart';
 
-typedef LoginAuthenticatedCallback = void Function(
-  AuthSession session,
-  String currentPassword,
-);
+typedef LoginAuthenticatedCallback = void Function(AuthSession session);
 
 class LoginPage extends StatefulWidget {
   const LoginPage({required this.onAuthenticated, super.key});
@@ -65,9 +62,7 @@ class _LoginPageState extends State<LoginPage> {
           current.status == LoginStatus.success,
       listener: (context, state) {
         final session = context.read<LoginCubit>().takeSession();
-        if (session != null) {
-          widget.onAuthenticated(session, _passwordController.text);
-        }
+        if (session != null) widget.onAuthenticated(session);
       },
       builder: (context, state) {
         return AutofillGroup(

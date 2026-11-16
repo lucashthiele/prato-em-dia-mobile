@@ -2,8 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../../core/config/app_environment.dart';
-import '../../../auth/domain/auth_session.dart';
 import '../../data/today_api.dart';
 import '../../data/today_repository_impl.dart';
 import '../../../../core/nutrition/macros.dart';
@@ -11,18 +9,12 @@ import '../../domain/today_repository.dart';
 import '../cubit/today_cubit.dart';
 import '../../../food_log/presentation/pages/food_log_page.dart';
 
-/// Today receives the active session and its existing renewal operation from
-/// the app shell. [repository] is optional for tests and feature composition.
+/// Today receives the shared [Dio] (cookie session) from the app shell.
+/// [repository] is optional for tests and feature composition.
 class TodayPage extends StatefulWidget {
-  const TodayPage({
-    this.session,
-    this.renewSession,
-    this.repository,
-    super.key,
-  });
+  const TodayPage({this.dio, this.repository, super.key});
 
-  final AuthSession? session;
-  final Future<AuthSession?> Function()? renewSession;
+  final Dio? dio;
   final TodayRepository? repository;
 
   @override
@@ -40,22 +32,9 @@ class _TodayPageState extends State<TodayPage> {
     _selectedDate = DateTime(now.year, now.month, now.day);
     _cubit = TodayCubit(
       widget.repository ??
-          (widget.session == null || widget.renewSession == null
+          (widget.dio == null
               ? _UnavailableTodayRepository()
-              : TodayRepositoryImpl(
-                  TodayApi(
-                    Dio(
-                      BaseOptions(
-                        baseUrl: AppEnvironment.apiBaseUrl,
-                        connectTimeout: const Duration(seconds: 12),
-                        receiveTimeout: const Duration(seconds: 12),
-                        headers: const {'Accept': 'application/json'},
-                      ),
-                    ),
-                  ),
-                  widget.session!,
-                  widget.renewSession!,
-                )),
+              : TodayRepositoryImpl(TodayApi(widget.dio!))),
     )..load();
   }
 
@@ -93,7 +72,7 @@ class _TodayPageState extends State<TodayPage> {
   }
 
   Future<void> _choose(TodayMeal meal) async {
-    if (widget.session != null && widget.renewSession != null) {
+    if (widget.dio != null) {
       await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => FoodLogPage(
@@ -102,8 +81,7 @@ class _TodayPageState extends State<TodayPage> {
             date: meal.date,
             mealType: meal.mealType,
             plannedTime: meal.time,
-            session: widget.session!,
-            renewSession: widget.renewSession!,
+            dio: widget.dio!,
           ),
         ),
       );

@@ -2,36 +2,19 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 
-import '../../auth/domain/auth_session.dart';
 import '../domain/today_repository.dart';
 import 'today_api.dart';
 
 class TodayRepositoryImpl implements TodayRepository {
-  TodayRepositoryImpl(this._api, this._session, this._renewSession);
+  TodayRepositoryImpl(this._api);
 
   final TodayRemoteDataSource _api;
-  AuthSession _session;
-  final Future<AuthSession?> Function() _renewSession;
   final Map<String, _PendingCommand> _pending = {};
-
-  Future<T> _authorized<T>(Future<T> Function(String) request) async {
-    try {
-      return await request('${_session.tokenType} ${_session.accessToken}');
-    } on DioException catch (error) {
-      if (error.response?.statusCode != 401) rethrow;
-      final session = await _renewSession();
-      if (session == null) {
-        throw const TodayFailure('Sua sessão terminou. Entre novamente.');
-      }
-      _session = session;
-      return request('${session.tokenType} ${session.accessToken}');
-    }
-  }
 
   @override
   Future<TodayData> load(DateTime date) async {
     try {
-      final plans = await _authorized(_api.plans);
+      final plans = await _api.plans();
       final day = _civilDate(date);
       final meals = <TodayMeal>[];
       final periods = <TodayPeriod>[];
@@ -80,7 +63,7 @@ class TodayRepositoryImpl implements TodayRepository {
 
       final ids = meals.map((meal) => meal.id).toSet();
       final latest = <String, CompletionEvent>{};
-      for (final raw in await _authorized((a) => _api.executions(a, day))) {
+      for (final raw in await _api.executions(day)) {
         final execution = _object(raw);
         final mealId = execution['plannedMealId'] as String?;
         if (mealId != null && ids.contains(mealId)) {
@@ -111,7 +94,7 @@ class TodayRepositoryImpl implements TodayRepository {
   /// The summary is secondary: if it fails the day still loads without it.
   Future<DailySummary?> _summary(String day) async {
     try {
-      final data = await _authorized((a) => _api.dailySummary(a, day));
+      final data = await _api.dailySummary(day);
       Map<String, NutrientAmount> totals(Object? raw) => {
         for (final e in (raw as Map<String, dynamic>? ?? const {}).entries)
           e.key: NutrientAmount(
@@ -148,14 +131,14 @@ class TodayRepositoryImpl implements TodayRepository {
         : _PendingCommand(type, _newKey(), DateTime.now().toUtc());
     _pending[meal.id] = command;
     try {
-      final result = await _authorized((auth) async {
+      final result = await (() async {
         final items = type == CompletionType.completed
-            ? await _plannedItems(auth, meal.id)
+            ? await _plannedItems(meal.id)
             : const <Map<String, dynamic>>[];
-        final current = (await _api.executions(
-          auth,
-          meal.date,
-        )).map(_object).where((e) => e['plannedMealId'] == meal.id).firstOrNull;
+        final current = (await _api.executions(meal.date))
+            .map(_object)
+            .where((e) => e['plannedMealId'] == meal.id)
+            .firstOrNull;
         // Keep a time the patient already edited; a meal planned without one
         // is recorded at the current time, since the server requires it.
         final time = (current?['time'] as String? ?? meal.time)?.substring(
@@ -170,15 +153,14 @@ class TodayRepositoryImpl implements TodayRepository {
           'items': items,
         };
         return current == null
-            ? _api.createExecution(auth, command.key, payload)
+            ? _api.createExecution(command.key, payload)
             : _api.replaceExecution(
-                auth,
                 current['id'] as String,
                 current['version'] as int,
                 command.key,
                 payload,
               );
-      });
+      })();
       _pending.remove(meal.id);
       return _event(result);
     } on TodayFailure {
@@ -197,11 +179,8 @@ class TodayRepositoryImpl implements TodayRepository {
   }
 
   /// Consumption identical to the prescription: every planned item as planned.
-  Future<List<Map<String, dynamic>>> _plannedItems(
-    String auth,
-    String mealId,
-  ) async {
-    final log = await _api.foodLog(auth, mealId);
+  Future<List<Map<String, dynamic>>> _plannedItems(String mealId) async {
+    final log = await _api.foodLog(mealId);
     return [
       for (final raw in log['items'] as List<dynamic>)
         () {

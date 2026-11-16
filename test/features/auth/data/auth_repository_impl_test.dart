@@ -1,203 +1,168 @@
-import 'dart:async';
-
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prato_em_dia_mobile/features/auth/data/auth_api.dart';
 import 'package:prato_em_dia_mobile/features/auth/data/auth_repository_impl.dart';
-import 'package:prato_em_dia_mobile/features/auth/data/auth_token_store.dart';
+import 'package:prato_em_dia_mobile/features/auth/domain/auth_repository.dart';
+
+DioException _error(int status, String code) => DioException(
+  requestOptions: RequestOptions(path: '/x'),
+  response: Response(
+    requestOptions: RequestOptions(path: '/x'),
+    statusCode: status,
+    data: {'status': status, 'code': code, 'message': 'msg', 'errors': []},
+  ),
+  type: DioExceptionType.badResponse,
+);
 
 void main() {
-  group('AuthRepositoryImpl.restoreSession', () {
-    test('restores a valid access token without refreshing it', () async {
+  group('login', () {
+    test('reads the session flags from the body, without tokens', () async {
       final api = _FakeAuthApi();
-      final store = _MemoryTokenStore(_storedSession(expiresIn: 300));
-      final repository = AuthRepositoryImpl(api, store);
+      final session = await AuthRepositoryImpl(api)
+          .login(email: '  ana@exemplo.com ', password: 'x');
 
-      final session = await repository.restoreSession();
-
-      expect(session?.accessToken, 'stored-access');
-      expect(api.validateCalls, 1);
-      expect(api.refreshCalls, 0);
-      expect(store.wasCleared, isFalse);
+      expect(api.loginEmail, 'ana@exemplo.com');
+      expect(session.passwordChangeRequired, isFalse);
+      expect(session.expiresIn, 900);
     });
 
-    test(
-      'refreshes an expired access token and rotates stored tokens',
-      () async {
-        final api = _FakeAuthApi();
-        final store = _MemoryTokenStore(_storedSession(expiresIn: -10));
-        final repository = AuthRepositoryImpl(api, store);
-
-        final session = await repository.restoreSession();
-
-        expect(session?.accessToken, 'new-access');
-        expect(api.validateCalls, 0);
-        expect(api.refreshCalls, 1);
-        expect(store.value?.refreshToken, 'new-refresh');
-      },
-    );
-
-    test('refreshes when the server rejects a valid access token', () async {
-      final api = _FakeAuthApi(validateFails: true);
-      final store = _MemoryTokenStore(_storedSession(expiresIn: 300));
-      final repository = AuthRepositoryImpl(api, store);
-
-      final session = await repository.restoreSession();
-
-      expect(session?.accessToken, 'new-access');
-      expect(api.validateCalls, 1);
-      expect(api.refreshCalls, 1);
-      expect(store.value?.refreshToken, 'new-refresh');
+    test('401 AUTH_INVALID_CREDENTIALS shows the generic message (A-03)', () {
+      final api = _FakeAuthApi()
+        ..loginError = _error(401, 'AUTH_INVALID_CREDENTIALS');
+      expect(
+        AuthRepositoryImpl(api).login(email: 'a@b.c', password: 'x'),
+        throwsA(
+          isA<AuthFailure>()
+              .having(
+                (f) => f.message,
+                'message',
+                'E-mail ou senha incorretos. Confira os dados e tente novamente.',
+              )
+              .having((f) => f.code, 'code', 'AUTH_INVALID_CREDENTIALS'),
+        ),
+      );
     });
 
-    test('clears the session when validation and refresh both fail', () async {
-      final api = _FakeAuthApi(validateFails: true, refreshFails: true);
-      final store = _MemoryTokenStore(_storedSession(expiresIn: 300));
-      final repository = AuthRepositoryImpl(api, store);
-
-      final session = await repository.restoreSession();
-
-      expect(session, isNull);
-      expect(api.validateCalls, 1);
-      expect(api.refreshCalls, 1);
-      expect(store.wasCleared, isTrue);
-    });
-
-    test('shares one refresh across concurrent callers', () async {
-      final gate = Completer<Map<String, dynamic>>();
-      final api = _FakeAuthApi(refreshGate: gate);
-      final store = _MemoryTokenStore(_storedSession(expiresIn: -10));
-      final repository = AuthRepositoryImpl(api, store);
-
-      final first = repository.restoreSession();
-      final second = repository.restoreSession();
-      await Future<void>.delayed(Duration.zero);
-      expect(api.refreshCalls, 1);
-
-      gate.complete(_newTokens);
-      final sessions = await Future.wait([first, second]);
-      expect(sessions.map((session) => session?.accessToken), [
-        'new-access',
-        'new-access',
-      ]);
-      expect(store.value?.refreshToken, 'new-refresh');
+    test('a connection failure shows the network message', () {
+      final api = _FakeAuthApi()
+        ..loginError = DioException.connectionError(
+          requestOptions: RequestOptions(path: '/x'),
+          reason: 'offline',
+        );
+      expect(
+        AuthRepositoryImpl(api).login(email: 'a@b.c', password: 'x'),
+        throwsA(
+          isA<AuthFailure>().having(
+            (f) => f.message,
+            'message',
+            contains('Não foi possível conectar'),
+          ),
+        ),
+      );
     });
   });
 
-  test('changes the password and persists the rotated session', () async {
-    final api = _FakeAuthApi();
-    final store = _MemoryTokenStore(_storedSession(expiresIn: 300));
-    final repository = AuthRepositoryImpl(api, store);
-    await repository.restoreSession();
+  group('restoreSession', () {
+    test('restores the session when /me answers', () async {
+      final session = await AuthRepositoryImpl(_FakeAuthApi()).restoreSession();
+      expect(session?.passwordChangeRequired, isFalse);
+    });
 
-    final session = await repository.changePassword(
-      currentPassword: 'senha-inicial',
-      newPassword: 'minha-nova-senha',
-    );
+    test('keeps the restricted first-access session', () async {
+      final api = _FakeAuthApi()
+        ..meError = _error(403, 'PASSWORD_CHANGE_REQUIRED');
+      final session = await AuthRepositoryImpl(api).restoreSession();
+      expect(session?.passwordChangeRequired, isTrue);
+    });
 
-    expect(api.lastAccessToken, 'stored-access');
-    expect(api.lastCurrentPassword, 'senha-inicial');
-    expect(api.lastNewPassword, 'minha-nova-senha');
-    expect(session.passwordChangeRequired, isFalse);
-    expect(store.value?.accessToken, 'new-access');
-    expect(store.value?.refreshToken, 'new-refresh');
+    test('returns null without a valid session', () async {
+      final api = _FakeAuthApi()
+        ..meError = _error(401, 'AUTHENTICATION_REQUIRED');
+      expect(await AuthRepositoryImpl(api).restoreSession(), isNull);
+    });
   });
-}
 
-StoredAuthSession _storedSession({required int expiresIn}) {
-  return StoredAuthSession(
-    accessToken: 'stored-access',
-    refreshToken: 'stored-refresh',
-    tokenType: 'Bearer',
-    expiresAt: DateTime.now().toUtc().add(Duration(seconds: expiresIn)),
-    passwordChangeRequired: false,
+  group('changePassword', () {
+    test('first access sends only the new password', () async {
+      final api = _FakeAuthApi();
+      await AuthRepositoryImpl(api)
+          .changePassword(newPassword: 'nova-senha-123');
+      expect(api.sentCurrentPassword, isNull);
+      expect(api.sentNewPassword, 'nova-senha-123');
+    });
+
+    test('wrong current password gets a specific message', () {
+      final api = _FakeAuthApi()
+        ..changeError = _error(401, 'AUTH_INVALID_CREDENTIALS');
+      expect(
+        AuthRepositoryImpl(
+          api,
+        ).changePassword(currentPassword: 'x', newPassword: 'nova-senha-123'),
+        throwsA(
+          isA<AuthFailure>().having(
+            (f) => f.message,
+            'message',
+            contains('senha atual não confere'),
+          ),
+        ),
+      );
+    });
+  });
+
+  test(
+    'logout revokes remotely and clears the cookies even on failure',
+    () async {
+      var cleared = 0;
+      final api = _FakeAuthApi()..logoutError = _error(500, 'INTERNAL_ERROR');
+      await AuthRepositoryImpl(
+        api,
+        clearSession: () async => cleared++,
+      ).logout();
+      expect(api.logoutCalls, 1);
+      expect(cleared, 1);
+    },
   );
 }
 
-class _MemoryTokenStore implements AuthTokenStore {
-  _MemoryTokenStore(this.value);
-
-  StoredAuthSession? value;
-  bool wasCleared = false;
-
-  @override
-  Future<void> clear() async {
-    wasCleared = true;
-    value = null;
-  }
-
-  @override
-  Future<StoredAuthSession?> read() async => value;
-
-  @override
-  Future<void> write(StoredAuthSession session) async {
-    value = session;
-  }
-}
-
 class _FakeAuthApi implements AuthRemoteDataSource {
-  _FakeAuthApi({
-    this.validateFails = false,
-    this.refreshFails = false,
-    this.refreshGate,
-  });
-
-  final bool validateFails;
-  final bool refreshFails;
-  final Completer<Map<String, dynamic>>? refreshGate;
-  int validateCalls = 0;
-  int refreshCalls = 0;
-  String? lastAccessToken;
-  String? lastCurrentPassword;
-  String? lastNewPassword;
-
-  @override
-  Future<Map<String, dynamic>> changePassword({
-    required String accessToken,
-    required String tokenType,
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    lastAccessToken = accessToken;
-    lastCurrentPassword = currentPassword;
-    lastNewPassword = newPassword;
-    return _newTokens;
-  }
+  DioException? loginError;
+  DioException? meError;
+  DioException? changeError;
+  DioException? logoutError;
+  String? loginEmail;
+  String? sentCurrentPassword;
+  String? sentNewPassword;
+  int logoutCalls = 0;
 
   @override
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,
-  }) async => _newTokens;
-
-  @override
-  Future<void> logout({
-    required String accessToken,
-    required String refreshToken,
-    required String tokenType,
-  }) async {}
-
-  @override
-  Future<Map<String, dynamic>> refresh({required String refreshToken}) async {
-    refreshCalls++;
-    if (refreshFails) throw Exception('refresh failed');
-    if (refreshGate != null) return refreshGate!.future;
-    return _newTokens;
+  }) async {
+    loginEmail = email;
+    if (loginError != null) throw loginError!;
+    return {'expiresIn': 900, 'passwordChangeRequired': false};
   }
 
   @override
-  Future<void> validateAccessToken({
-    required String accessToken,
-    required String tokenType,
+  Future<void> me() async {
+    if (meError != null) throw meError!;
+  }
+
+  @override
+  Future<Map<String, dynamic>> changePassword({
+    String? currentPassword,
+    required String newPassword,
   }) async {
-    validateCalls++;
-    if (validateFails) throw Exception('validation failed');
+    sentCurrentPassword = currentPassword;
+    sentNewPassword = newPassword;
+    if (changeError != null) throw changeError!;
+    return {'expiresIn': 900, 'passwordChangeRequired': false};
+  }
+
+  @override
+  Future<void> logout() async {
+    logoutCalls++;
+    if (logoutError != null) throw logoutError!;
   }
 }
-
-const _newTokens = <String, dynamic>{
-  'accessToken': 'new-access',
-  'refreshToken': 'new-refresh',
-  'tokenType': 'Bearer',
-  'expiresIn': 300,
-  'passwordChangeRequired': false,
-};
