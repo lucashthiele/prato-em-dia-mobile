@@ -113,7 +113,7 @@ void main() {
     expect(find.text('Dados salvos.'), findsOneWidget);
   });
 
-  void _tall(WidgetTester tester) {
+  void tall(WidgetTester tester) {
     tester.view.physicalSize = const Size(800, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -134,7 +134,7 @@ void main() {
   );
 
   testWidgets('cartão de prescrição abre a prescrição vigente', (tester) async {
-    _tall(tester);
+    tall(tester);
     final prescription = currentPrescriptionFromJson({
       'id': 'v1',
       'number': 3,
@@ -160,7 +160,7 @@ void main() {
   });
 
   testWidgets('sem prescrição o cartão mostra o estado vazio', (tester) async {
-    _tall(tester);
+    tall(tester);
     await tester.pumpWidget(host());
     await tester.pumpAndSettle();
     expect(find.text(NoPrescriptionEmptyState.message), findsOneWidget);
@@ -171,7 +171,7 @@ void main() {
   });
 
   testWidgets('vínculo é só exibição, sem ação de encerrar', (tester) async {
-    _tall(tester);
+    tall(tester);
     await tester.pumpWidget(
       host(profile: _FakeProfileRepository(nutritionist: 'Dra. Bia')),
     );
@@ -184,7 +184,7 @@ void main() {
   testWidgets('trocar senha abre a página no modo Perfil e segue logado', (
     tester,
   ) async {
-    _tall(tester);
+    tall(tester);
     final auth = _FakeAuth();
     await tester.pumpWidget(host(auth: auth));
     await tester.pumpAndSettle();
@@ -224,7 +224,7 @@ void main() {
   });
 
   testWidgets('senha atual errada mostra a mensagem do código', (tester) async {
-    _tall(tester);
+    tall(tester);
     await tester.pumpWidget(host(auth: _FakeAuth(fail: true)));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Trocar senha'));
