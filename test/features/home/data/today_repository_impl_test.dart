@@ -1,23 +1,15 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prato_em_dia_mobile/features/auth/domain/auth_session.dart';
 import 'package:prato_em_dia_mobile/features/home/data/today_api.dart';
 import 'package:prato_em_dia_mobile/features/home/data/today_repository_impl.dart';
 import 'package:prato_em_dia_mobile/features/home/domain/today_repository.dart';
 
 void main() {
-  const session = AuthSession(
-    accessToken: 'token',
-    tokenType: 'Bearer',
-    expiresIn: 3600,
-    passwordChangeRequired: false,
-  );
-
   test(
     'filters today meals and derives status from the day executions',
     () async {
       final api = _FakeApi();
-      final repository = TodayRepositoryImpl(api, session, () async => session);
+      final repository = TodayRepositoryImpl(api);
       final data = await repository.load(DateTime(2026, 10, 10));
       expect(data.meals.map((meal) => meal.name), ['Almoço']);
       expect(data.latestEvents['meal-1']?.type, CompletionType.notCompleted);
@@ -31,7 +23,7 @@ void main() {
       final api = _FakeApi()
         ..failFirstRecord = true
         ..recorded = true;
-      final repository = TodayRepositoryImpl(api, session, () async => session);
+      final repository = TodayRepositoryImpl(api);
       final meal = (await repository.load(DateTime(2026, 10, 10))).meals.single;
       await expectLater(
         repository.record(meal, CompletionType.completed),
@@ -56,21 +48,13 @@ void main() {
   );
 
   test('loads the daily nutrition summary and tolerates its failure', () async {
-    final repository = TodayRepositoryImpl(
-      _FakeApi(),
-      session,
-      () async => session,
-    );
+    final repository = TodayRepositoryImpl(_FakeApi());
     final summary = (await repository.load(DateTime(2026, 10, 10))).summary!;
     expect(summary.prescribed['energy_kcal']?.amount, 2000);
     expect(summary.prescribed['protein']?.unit, 'g');
     expect(summary.realized['energy_kcal']?.amount, 1320.5);
 
-    final failing = TodayRepositoryImpl(
-      _FakeApi()..summaryFails = true,
-      session,
-      () async => session,
-    );
+    final failing = TodayRepositoryImpl(_FakeApi()..summaryFails = true);
     final data = await failing.load(DateTime(2026, 10, 10));
     expect(data.summary, isNull);
     expect(data.meals, isNotEmpty);
@@ -78,7 +62,7 @@ void main() {
 
   test('keeps a valid meal whose scheduled time is null', () async {
     final api = _FakeApi()..nullTime = true;
-    final repository = TodayRepositoryImpl(api, session, () async => session);
+    final repository = TodayRepositoryImpl(api);
     final data = await repository.load(DateTime(2026, 10, 10));
     expect(data.meals.single.name, 'Almoço');
     expect(data.meals.single.time, isNull);
@@ -95,7 +79,7 @@ class _FakeApi implements TodayRemoteDataSource {
   bool summaryFails = false;
 
   @override
-  Future<List<dynamic>> plans(String authorization) async => [
+  Future<List<dynamic>> plans() async => [
     {
       'periodStart': '2026-10-10',
       'periodEnd': '2026-10-16',
@@ -123,10 +107,7 @@ class _FakeApi implements TodayRemoteDataSource {
   ];
 
   @override
-  Future<Map<String, dynamic>> dailySummary(
-    String authorization,
-    String date,
-  ) async {
+  Future<Map<String, dynamic>> dailySummary(String date) async {
     if (summaryFails) {
       throw DioException(requestOptions: RequestOptions(path: 'summary'));
     }
@@ -144,7 +125,7 @@ class _FakeApi implements TodayRemoteDataSource {
   }
 
   @override
-  Future<List<dynamic>> executions(String authorization, String date) async {
+  Future<List<dynamic>> executions(String date) async {
     dates.add(date);
     return [
       {
@@ -168,10 +149,7 @@ class _FakeApi implements TodayRemoteDataSource {
   }
 
   @override
-  Future<Map<String, dynamic>> foodLog(
-    String authorization,
-    String mealId,
-  ) async => {
+  Future<Map<String, dynamic>> foodLog(String mealId) async => {
     'plannedMealId': mealId,
     'mode': 'FREE',
     'items': [
@@ -188,7 +166,6 @@ class _FakeApi implements TodayRemoteDataSource {
 
   @override
   Future<Map<String, dynamic>> createExecution(
-    String authorization,
     String idempotencyKey,
     Map<String, dynamic> payload,
   ) async {
@@ -210,10 +187,9 @@ class _FakeApi implements TodayRemoteDataSource {
 
   @override
   Future<Map<String, dynamic>> replaceExecution(
-    String authorization,
     String id,
     int version,
     String idempotencyKey,
     Map<String, dynamic> payload,
-  ) async => createExecution(authorization, idempotencyKey, payload);
+  ) async => createExecution(idempotencyKey, payload);
 }

@@ -1,15 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prato_em_dia_mobile/features/auth/domain/auth_session.dart';
 import 'package:prato_em_dia_mobile/features/food_log/presentation/pages/food_log_page.dart';
-
-const _session = AuthSession(
-  accessToken: 'test-token',
-  tokenType: 'Bearer',
-  expiresIn: 3600,
-  passwordChangeRequired: false,
-);
 
 void main() {
   testWidgets('reopening shows the consumption confirmed for the meal', (
@@ -99,8 +91,6 @@ void main() {
                       date: '2026-10-10',
                       mealType: 'BREAKFAST',
                       plannedTime: '07:30:00',
-                      session: _session,
-                      renewSession: () async => _session,
                       dio: dio,
                     ),
                   ),
@@ -226,8 +216,6 @@ void main() {
           date: '2026-10-10',
           mealType: 'LUNCH',
           plannedTime: '12:00:00',
-          session: _session,
-          renewSession: () async => _session,
           dio: dio,
         ),
       ),

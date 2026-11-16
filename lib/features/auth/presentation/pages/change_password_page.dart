@@ -13,12 +13,21 @@ import '../widgets/auth_password_field.dart';
 class ChangePasswordPage extends StatefulWidget {
   const ChangePasswordPage({
     required this.onPasswordChanged,
-    required this.onLogout,
+    this.mode = ChangePasswordMode.firstAccess,
+    this.onLogout,
+    this.onCancel,
     super.key,
   });
 
+  /// Deve ser o mesmo modo do [ChangePasswordCubit] fornecido à página.
+  final ChangePasswordMode mode;
   final ValueChanged<AuthSession> onPasswordChanged;
-  final Future<void> Function() onLogout;
+
+  /// "Sair da conta" (primeiro acesso). Sem ele, o botão não aparece.
+  final Future<void> Function()? onLogout;
+
+  /// "Cancelar" (pelo Perfil). Sem ele, o botão não aparece.
+  final VoidCallback? onCancel;
 
   @override
   State<ChangePasswordPage> createState() => _ChangePasswordPageState();
@@ -26,6 +35,7 @@ class ChangePasswordPage extends StatefulWidget {
 
 class _ChangePasswordPageState extends State<ChangePasswordPage> {
   final _formKey = GlobalKey<FormState>();
+  final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmationController = TextEditingController();
   final _confirmationFocusNode = FocusNode();
@@ -33,6 +43,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
   @override
   void dispose() {
+    _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmationController.dispose();
     _confirmationFocusNode.dispose();
@@ -45,6 +56,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
     context.read<ChangePasswordCubit>().submit(
       newPassword: _newPasswordController.text,
+      currentPassword: _currentPasswordController.text,
     );
   }
 
@@ -52,7 +64,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     if (_isLoggingOut) return;
     setState(() => _isLoggingOut = true);
     try {
-      await widget.onLogout();
+      await widget.onLogout?.call();
     } finally {
       if (mounted) setState(() => _isLoggingOut = false);
     }
@@ -69,6 +81,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   Widget _buildForm(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final isProfile = widget.mode == ChangePasswordMode.fromProfile;
 
     return BlocConsumer<ChangePasswordCubit, ChangePasswordState>(
       listenWhen: (previous, current) =>
@@ -90,12 +103,14 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                 const AppBrandMark(),
                 const SizedBox(height: 40),
                 Text(
-                  'Crie sua senha pessoal',
+                  isProfile ? 'Alterar senha' : 'Crie sua senha pessoal',
                   style: theme.textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Este é seu primeiro acesso. Troque a senha inicial por uma senha que só você conhece.',
+                  isProfile
+                      ? 'Informe a senha atual e escolha uma nova senha.'
+                      : 'Este é seu primeiro acesso. Troque a senha inicial por uma senha que só você conhece.',
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -104,6 +119,20 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                 if (state.errorMessage != null) ...[
                   AppErrorBanner(message: state.errorMessage!),
                   const SizedBox(height: 20),
+                ],
+                if (isProfile) ...[
+                  AuthPasswordField(
+                    controller: _currentPasswordController,
+                    enabled: !isBusy,
+                    labelText: 'Senha atual',
+                    prefixIcon: Icons.lock_outline_rounded,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.password],
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Informe a senha atual.'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
                 ],
                 AuthPasswordField(
                   controller: _newPasswordController,
@@ -152,23 +181,29 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                 ),
                 const SizedBox(height: 24),
                 AppAsyncFilledButton(
-                  label: 'Salvar e continuar',
+                  label: isProfile ? 'Alterar senha' : 'Salvar e continuar',
                   loadingLabel: 'Salvando nova senha, aguarde',
                   isLoading: state.isSubmitting,
                   enabled: !_isLoggingOut,
                   onPressed: _submit,
                 ),
                 const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: isBusy ? null : _logout,
-                  icon: _isLoggingOut
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.logout_rounded),
-                  label: Text(_isLoggingOut ? 'Saindo...' : 'Sair da conta'),
-                ),
+                if (widget.onLogout != null)
+                  TextButton.icon(
+                    onPressed: isBusy ? null : _logout,
+                    icon: _isLoggingOut
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.logout_rounded),
+                    label: Text(_isLoggingOut ? 'Saindo...' : 'Sair da conta'),
+                  ),
+                if (widget.onCancel != null)
+                  TextButton(
+                    onPressed: isBusy ? null : widget.onCancel,
+                    child: const Text('Cancelar'),
+                  ),
               ],
             ),
           ),

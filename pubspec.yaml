@@ -11,7 +11,10 @@ dependencies:
     sdk: flutter
   dio: ^5.9.0
   flutter_bloc: ^9.1.1
-  flutter_secure_storage: ^10.3.2
+  dio_cookie_manager: ^3.5.0
+  cookie_jar: ^4.0.9
+  path_provider: ^2.1.6
+  package_info_plus: ^10.2.2
 
 dev_dependencies:
   flutter_test:

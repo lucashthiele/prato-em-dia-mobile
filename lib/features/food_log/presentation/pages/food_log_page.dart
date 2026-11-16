@@ -4,10 +4,8 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../core/config/app_environment.dart';
 import '../../../../core/formatting/decimal.dart';
 import '../../../../core/nutrition/macros.dart';
-import '../../../auth/domain/auth_session.dart';
 import '../../../catalog/data/allowed_foods_repository.dart';
 import '../../../catalog/data/catalog_api.dart';
 import '../../../catalog/data/catalog_repository_impl.dart';
@@ -111,11 +109,9 @@ class FoodLogPage extends StatefulWidget {
     required this.mealId,
     required this.mealName,
     required this.date,
-    required this.session,
-    required this.renewSession,
+    required this.dio,
     this.mealType,
     this.plannedTime,
-    this.dio,
     super.key,
   });
 
@@ -125,23 +121,15 @@ class FoodLogPage extends StatefulWidget {
   /// Category (`BREAKFAST`, `LUNCH`, `SNACK`, `DINNER`) and planned `HH:mm`
   /// time of the meal, when the caller knows them.
   final String? mealType, plannedTime;
-  final AuthSession session;
-  final Future<AuthSession?> Function() renewSession;
-  final Dio? dio;
+
+  /// The shared [Dio] (cookie session).
+  final Dio dio;
   @override
   State<FoodLogPage> createState() => _State();
 }
 
 class _State extends State<FoodLogPage> {
-  late final Dio dio =
-      widget.dio ??
-      Dio(
-        BaseOptions(
-          baseUrl: AppEnvironment.apiBaseUrl,
-          headers: const {'Accept': 'application/json'},
-        ),
-      );
-  late AuthSession session = widget.session;
+  Dio get dio => widget.dio;
   String key = _key();
   String? lastBody;
   // Active execution of this meal, when one was already saved.
@@ -153,18 +141,6 @@ class _State extends State<FoodLogPage> {
   List<_Item>? items;
   String? error;
   bool saving = false;
-  Future<T> auth<T>(Future<T> Function(String) f) async {
-    try {
-      return await f('${session.tokenType} ${session.accessToken}');
-    } on DioException catch (e) {
-      if (e.response?.statusCode != 401) rethrow;
-      final n = await widget.renewSession();
-      if (n == null) rethrow;
-      session = n;
-      return f('${n.tokenType} ${n.accessToken}');
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -176,12 +152,7 @@ class _State extends State<FoodLogPage> {
   }
 
   Future<_Food> food(String id) async {
-    final r = await auth(
-      (a) => dio.get<Map<String, dynamic>>(
-        '/api/v1/foods/$id',
-        options: Options(headers: {'Authorization': a}),
-      ),
-    );
+    final r = await dio.get<Map<String, dynamic>>('/api/v1/foods/$id');
     final d = r.data!;
     return _Food(
       d['id'] as String,
@@ -258,12 +229,9 @@ class _State extends State<FoodLogPage> {
   }
 
   Future<List<_Item>> latestItems(List<_Item> planned) async {
-    final response = await auth(
-      (a) => dio.get<List<dynamic>>(
-        '/api/v1/patients/me/meal-executions',
-        queryParameters: {'date': widget.date},
-        options: Options(headers: {'Authorization': a}),
-      ),
+    final response = await dio.get<List<dynamic>>(
+      '/api/v1/patients/me/meal-executions',
+      queryParameters: {'date': widget.date},
     );
     final current = response.data!
         .cast<Map<String, dynamic>>()
@@ -299,11 +267,8 @@ class _State extends State<FoodLogPage> {
   Future<void> load() async {
     setState(() => error = null);
     try {
-      final r = await auth(
-        (a) => dio.get<Map<String, dynamic>>(
-          '/api/v1/planned-meals/${widget.mealId}/food-log',
-          options: Options(headers: {'Authorization': a}),
-        ),
+      final r = await dio.get<Map<String, dynamic>>(
+        '/api/v1/planned-meals/${widget.mealId}/food-log',
       );
       final d = r.data!;
       final list = <_Item>[];
@@ -374,9 +339,7 @@ class _State extends State<FoodLogPage> {
     }
   }
 
-  late final CatalogRepository catalog = CatalogRepositoryImpl(
-    CatalogApi(dio, session, widget.renewSession),
-  );
+  late final CatalogRepository catalog = CatalogRepositoryImpl(CatalogApi(dio));
 
   Future<_Food?> pick(CatalogRepository repository) async {
     final chosen = await Navigator.of(context).push<FoodSummary>(
@@ -524,27 +487,22 @@ class _State extends State<FoodLogPage> {
       if (encoded != lastBody) key = _key();
       lastBody = encoded;
       final current = execution;
-      await auth(
-        (a) => current == null
-            ? dio.post(
-                '/api/v1/patients/me/meal-executions',
-                data: body,
-                options: Options(
-                  headers: {'Authorization': a, 'Idempotency-Key': key},
-                ),
-              )
-            : dio.put(
-                '/api/v1/patients/me/meal-executions/${current['id']}',
-                data: body,
-                options: Options(
-                  headers: {
-                    'Authorization': a,
-                    'If-Match': current['version'],
-                    'Idempotency-Key': key,
-                  },
-                ),
+      await (current == null
+          ? dio.post(
+              '/api/v1/patients/me/meal-executions',
+              data: body,
+              options: Options(headers: {'Idempotency-Key': key}),
+            )
+          : dio.put(
+              '/api/v1/patients/me/meal-executions/${current['id']}',
+              data: body,
+              options: Options(
+                headers: {
+                  'If-Match': current['version'],
+                  'Idempotency-Key': key,
+                },
               ),
-      );
+            ));
       if (mounted) Navigator.pop(context, true);
     } on DioException catch (e) {
       if (mounted) {

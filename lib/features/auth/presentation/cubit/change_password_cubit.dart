@@ -4,22 +4,37 @@ import '../../domain/auth_repository.dart';
 import '../../domain/auth_session.dart';
 import 'change_password_state.dart';
 
+/// Os dois usos da tela de troca de senha.
+enum ChangePasswordMode {
+  /// Primeiro acesso (`passwordChangeRequired = true`): só a nova senha e a
+  /// confirmação; o servidor dispensa a senha atual.
+  firstAccess,
+
+  /// Pelo Perfil: a senha atual é obrigatória.
+  fromProfile,
+}
+
 class ChangePasswordCubit extends Cubit<ChangePasswordState> {
-  ChangePasswordCubit(this._repository, this._currentPassword)
-    : super(const ChangePasswordState());
+  ChangePasswordCubit(
+    this._repository, {
+    this.mode = ChangePasswordMode.firstAccess,
+  }) : super(const ChangePasswordState());
 
   final AuthRepository _repository;
-  String? _currentPassword;
+  final ChangePasswordMode mode;
   AuthSession? _session;
 
-  Future<void> submit({required String newPassword}) async {
+  Future<void> submit({
+    required String newPassword,
+    String? currentPassword,
+  }) async {
     if (state.isSubmitting) return;
-    final currentPassword = _currentPassword;
-    if (currentPassword == null) {
+    final needsCurrent = mode == ChangePasswordMode.fromProfile;
+    if (needsCurrent && (currentPassword == null || currentPassword.isEmpty)) {
       emit(
         const ChangePasswordState(
           status: ChangePasswordStatus.failure,
-          errorMessage: 'Entre novamente para criar sua senha pessoal.',
+          errorMessage: 'Informe a senha atual.',
         ),
       );
       return;
@@ -27,10 +42,9 @@ class ChangePasswordCubit extends Cubit<ChangePasswordState> {
     emit(const ChangePasswordState(status: ChangePasswordStatus.submitting));
     try {
       _session = await _repository.changePassword(
-        currentPassword: currentPassword,
+        currentPassword: needsCurrent ? currentPassword : null,
         newPassword: newPassword,
       );
-      _currentPassword = null;
       emit(const ChangePasswordState(status: ChangePasswordStatus.success));
     } on AuthFailure catch (failure) {
       emit(
@@ -53,11 +67,5 @@ class ChangePasswordCubit extends Cubit<ChangePasswordState> {
     final session = _session;
     _session = null;
     return session;
-  }
-
-  @override
-  Future<void> close() {
-    _currentPassword = null;
-    return super.close();
   }
 }

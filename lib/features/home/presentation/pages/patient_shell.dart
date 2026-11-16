@@ -6,8 +6,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/config/app_environment.dart';
-import '../../../auth/domain/auth_session.dart';
 import '../../../food_log/presentation/pages/food_log_page.dart';
 import '../../../planning/data/weekly_planning_api.dart';
 import '../../../planning/data/weekly_planning_repository_impl.dart';
@@ -15,17 +13,13 @@ import '../../../planning/presentation/pages/weekly_planning_page.dart';
 import '../../../profile/presentation/pages/profile_page.dart';
 import 'today_page.dart';
 
-/// The patient's available MVP destinations.
+/// The patient's available MVP destinations. Every tab gets the shared [Dio]
+/// (cookie session) and builds its own repositories from it, in its own
+/// method, so tabs can evolve independently.
 class PatientShell extends StatefulWidget {
-  const PatientShell({
-    required this.session,
-    required this.renewSession,
-    required this.onLogout,
-    super.key,
-  });
+  const PatientShell({required this.dio, required this.onLogout, super.key});
 
-  final AuthSession session;
-  final Future<AuthSession?> Function() renewSession;
+  final Dio dio;
   final Future<void> Function() onLogout;
 
   @override
@@ -34,55 +28,39 @@ class PatientShell extends StatefulWidget {
 
 class _PatientShellState extends State<PatientShell> {
   int _selectedIndex = 0;
+
   late final List<Widget> _pages = [
-    TodayPage(session: widget.session, renewSession: widget.renewSession),
-    WeeklyPlanningPage(
-      repository: WeeklyPlanningRepositoryImpl(
-        WeeklyPlanningApi(
-          Dio(
-            BaseOptions(
-              baseUrl: AppEnvironment.apiBaseUrl,
-              connectTimeout: const Duration(seconds: 12),
-              receiveTimeout: const Duration(seconds: 12),
-              headers: const {'Accept': 'application/json'},
-            ),
-          ),
-          accessToken: widget.session.accessToken,
-          tokenType: widget.session.tokenType,
-          renewCredentials: () async {
-            final session = await widget.renewSession();
-            return session == null
-                ? null
-                : (
-                    accessToken: session.accessToken,
-                    tokenType: session.tokenType,
-                  );
-          },
-        ),
-      ),
-      onOpenMeal: (meal) async {
-        await Navigator.of(context).push<bool>(
-          MaterialPageRoute(
-            builder: (_) => FoodLogPage(
-              mealId: meal.id,
-              mealName: meal.name,
-              date:
-                  '${meal.date.year.toString().padLeft(4, '0')}-${meal.date.month.toString().padLeft(2, '0')}-${meal.date.day.toString().padLeft(2, '0')}',
-              mealType: meal.mealType,
-              plannedTime: meal.time,
-              session: widget.session,
-              renewSession: widget.renewSession,
-            ),
-          ),
-        );
-      },
-    ),
-    ProfilePage(
-      session: widget.session,
-      refreshSession: widget.renewSession,
-      onLogout: widget.onLogout,
-    ),
+    _buildTodayTab(),
+    _buildWeekTab(),
+    _buildProfileTab(),
   ];
+
+  // --- Início -------------------------------------------------------------
+  Widget _buildTodayTab() => TodayPage(dio: widget.dio);
+
+  // --- Semana -------------------------------------------------------------
+  Widget _buildWeekTab() => WeeklyPlanningPage(
+    repository: WeeklyPlanningRepositoryImpl(WeeklyPlanningApi(widget.dio)),
+    onOpenMeal: (meal) async {
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => FoodLogPage(
+            mealId: meal.id,
+            mealName: meal.name,
+            date:
+                '${meal.date.year.toString().padLeft(4, '0')}-${meal.date.month.toString().padLeft(2, '0')}-${meal.date.day.toString().padLeft(2, '0')}',
+            mealType: meal.mealType,
+            plannedTime: meal.time,
+            dio: widget.dio,
+          ),
+        ),
+      );
+    },
+  );
+
+  // --- Perfil -------------------------------------------------------------
+  Widget _buildProfileTab() =>
+      ProfilePage(dio: widget.dio, onLogout: widget.onLogout);
 
   @override
   Widget build(BuildContext context) => Scaffold(

@@ -6,27 +6,19 @@ abstract interface class AuthRemoteDataSource {
     required String password,
   });
 
-  Future<Map<String, dynamic>> refresh({required String refreshToken});
+  /// `GET /me`: devolve os dados da conta, ou lança o erro do servidor.
+  Future<void> me();
 
   Future<Map<String, dynamic>> changePassword({
-    required String accessToken,
-    required String tokenType,
-    required String currentPassword,
+    String? currentPassword,
     required String newPassword,
   });
 
-  Future<void> validateAccessToken({
-    required String accessToken,
-    required String tokenType,
-  });
-
-  Future<void> logout({
-    required String accessToken,
-    required String refreshToken,
-    required String tokenType,
-  });
+  Future<void> logout();
 }
 
+/// Chamadas de autenticação. A sessão vai nos cookies do Dio compartilhado:
+/// login, troca de senha e logout não trazem nem enviam tokens no corpo.
 class AuthApi implements AuthRemoteDataSource {
   const AuthApi(this._dio);
 
@@ -42,86 +34,31 @@ class AuthApi implements AuthRemoteDataSource {
       data: {'email': email, 'password': password},
       options: Options(contentType: Headers.jsonContentType),
     );
-
-    final data = response.data;
-    if (data == null) {
-      throw const FormatException('Resposta de autenticação vazia.');
-    }
-    return data;
+    return response.data ??
+        (throw const FormatException('Resposta de autenticação vazia.'));
   }
 
   @override
-  Future<Map<String, dynamic>> refresh({required String refreshToken}) async {
-    final response = await _dio.post<Map<String, dynamic>>(
-      '/api/v1/auth/refresh',
-      data: {'refreshToken': refreshToken},
-      options: Options(contentType: Headers.jsonContentType),
-    );
-
-    final data = response.data;
-    if (data == null) {
-      throw const FormatException('Resposta de renovação vazia.');
-    }
-    return data;
+  Future<void> me() async {
+    await _dio.get<Object?>('/api/v1/me');
   }
 
   @override
   Future<Map<String, dynamic>> changePassword({
-    required String accessToken,
-    required String tokenType,
-    required String currentPassword,
+    String? currentPassword,
     required String newPassword,
   }) async {
     final response = await _dio.patch<Map<String, dynamic>>(
       '/api/v1/me/password',
-      data: {'currentPassword': currentPassword, 'newPassword': newPassword},
-      options: Options(
-        contentType: Headers.jsonContentType,
-        headers: {'Authorization': '$tokenType $accessToken'},
-      ),
+      data: {'currentPassword': ?currentPassword, 'newPassword': newPassword},
+      options: Options(contentType: Headers.jsonContentType),
     );
-
-    final data = response.data;
-    if (data == null) {
-      throw const FormatException('Resposta de alteração de senha vazia.');
-    }
-    return data;
+    return response.data ??
+        (throw const FormatException('Resposta de alteração de senha vazia.'));
   }
 
   @override
-  Future<void> validateAccessToken({
-    required String accessToken,
-    required String tokenType,
-  }) async {
-    try {
-      await _dio.get<Object?>(
-        '/api/v1/me',
-        options: Options(headers: {'Authorization': '$tokenType $accessToken'}),
-      );
-    } on DioException catch (error) {
-      final data = error.response?.data;
-      final code = data is Map<String, dynamic> ? data['code'] : null;
-      if (error.response?.statusCode == 403 &&
-          code == 'PASSWORD_CHANGE_REQUIRED') {
-        return;
-      }
-      rethrow;
-    }
-  }
-
-  @override
-  Future<void> logout({
-    required String accessToken,
-    required String refreshToken,
-    required String tokenType,
-  }) async {
-    await _dio.post<void>(
-      '/api/v1/auth/logout',
-      data: {'refreshToken': refreshToken},
-      options: Options(
-        contentType: Headers.jsonContentType,
-        headers: {'Authorization': '$tokenType $accessToken'},
-      ),
-    );
+  Future<void> logout() async {
+    await _dio.post<void>('/api/v1/auth/logout');
   }
 }

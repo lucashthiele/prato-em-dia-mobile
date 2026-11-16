@@ -2,9 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../../core/config/app_environment.dart';
 import '../../../../core/design_system/widgets/app_error_banner.dart';
-import '../../../auth/domain/auth_session.dart';
 import '../../data/profile_api.dart';
 import '../../domain/patient_profile.dart';
 import '../../domain/profile_repository.dart';
@@ -12,18 +10,16 @@ import '../cubit/profile_cubit.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({
-    required this.session,
     required this.onLogout,
-    this.refreshSession,
+    this.dio,
     this.repository,
     super.key,
   });
 
-  final AuthSession session;
   final Future<void> Function() onLogout;
 
-  /// Supply the host's session renewal method to retry an expired bearer once.
-  final Future<AuthSession?> Function()? refreshSession;
+  /// The shared [Dio] (cookie session). Optional when a [repository] is given.
+  final Dio? dio;
   final ProfileRepository? repository;
 
   @override
@@ -42,21 +38,7 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    _cubit = ProfileCubit(
-      widget.repository ??
-          ProfileApi(
-            Dio(
-              BaseOptions(
-                baseUrl: AppEnvironment.apiBaseUrl,
-                connectTimeout: const Duration(seconds: 12),
-                receiveTimeout: const Duration(seconds: 12),
-                headers: const {'Accept': 'application/json'},
-              ),
-            ),
-            widget.session,
-            refreshSession: widget.refreshSession,
-          ),
-    )..load();
+    _cubit = ProfileCubit(widget.repository ?? ProfileApi(widget.dio!))..load();
   }
 
   @override
