@@ -5,6 +5,8 @@ abstract interface class WeeklyPlanningRemoteDataSource {
   Future<Map<String, dynamic>> get(String planId);
   Future<Map<String, dynamic>> generate();
   Future<Map<String, dynamic>> confirm(String planId);
+  Future<Map<String, dynamic>> update(String planId, Map<String, dynamic> body);
+  Future<void> delete(String planId);
   Future<Map<String, dynamic>> getPreference();
   Future<Map<String, dynamic>> updatePreference({
     required String dayOfWeek,
@@ -53,6 +55,25 @@ class WeeklyPlanningApi implements WeeklyPlanningRemoteDataSource {
       ),
     );
     return response.data ?? (throw const FormatException('Plano vazio.'));
+  }
+
+  @override
+  Future<Map<String, dynamic>> update(
+    String planId,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _send(
+      () => _dio.patch<Map<String, dynamic>>(
+        '/api/v1/weekly-plans/$planId',
+        data: body,
+      ),
+    );
+    return response.data ?? (throw const FormatException('Plano vazio.'));
+  }
+
+  @override
+  Future<void> delete(String planId) async {
+    await _send(() => _dio.delete<void>('/api/v1/weekly-plans/$planId'));
   }
 
   @override

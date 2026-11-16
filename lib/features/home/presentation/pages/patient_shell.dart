@@ -7,9 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../food_log/presentation/pages/food_log_page.dart';
+import '../../../catalog/data/catalog_api.dart';
+import '../../../catalog/data/catalog_repository_impl.dart';
 import '../../../planning/data/weekly_planning_api.dart';
 import '../../../planning/data/weekly_planning_repository_impl.dart';
 import '../../../planning/presentation/pages/weekly_planning_page.dart';
+import '../../../prescription/data/current_prescription_api.dart';
 import '../../../profile/presentation/pages/profile_page.dart';
 import 'today_page.dart';
 
@@ -41,6 +44,9 @@ class _PatientShellState extends State<PatientShell> {
   // --- Semana -------------------------------------------------------------
   Widget _buildWeekTab() => WeeklyPlanningPage(
     repository: WeeklyPlanningRepositoryImpl(WeeklyPlanningApi(widget.dio)),
+    prescriptionRepository: CurrentPrescriptionApi(widget.dio),
+    foodNames: (id) async =>
+        (await CatalogRepositoryImpl(CatalogApi(widget.dio)).get(id)).food.name,
     onOpenMeal: (meal) async {
       await Navigator.of(context).push<bool>(
         MaterialPageRoute(
@@ -50,7 +56,6 @@ class _PatientShellState extends State<PatientShell> {
             date:
                 '${meal.date.year.toString().padLeft(4, '0')}-${meal.date.month.toString().padLeft(2, '0')}-${meal.date.day.toString().padLeft(2, '0')}',
             mealType: meal.mealType,
-            plannedTime: meal.time,
             dio: widget.dio,
           ),
         ),
