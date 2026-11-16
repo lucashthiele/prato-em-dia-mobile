@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:prato_em_dia_mobile/features/auth/domain/auth_repository.dart';
 import 'package:prato_em_dia_mobile/features/auth/domain/auth_session.dart';
 import 'package:prato_em_dia_mobile/features/auth/presentation/pages/change_password_page.dart';
+import 'package:prato_em_dia_mobile/features/catalog/domain/catalog_repository.dart';
 import 'package:prato_em_dia_mobile/features/prescription/data/current_prescription_mapper.dart';
 import 'package:prato_em_dia_mobile/features/prescription/domain/current_prescription.dart';
 import 'package:prato_em_dia_mobile/features/prescription/domain/current_prescription_repository.dart';
@@ -124,12 +125,14 @@ void main() {
     CurrentPrescriptionRepository? prescriptions,
     _FakeAuth? auth,
     ProfileRepository? profile,
+    CatalogRepository? catalog,
   }) => MaterialApp(
     home: ProfilePage(
       onLogout: () async {},
       repository: profile ?? _FakeProfileRepository(),
       prescriptionRepository: prescriptions ?? _FakePrescriptions(null),
       authRepository: auth ?? _FakeAuth(),
+      catalogRepository: catalog,
     ),
   );
 
@@ -157,6 +160,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(PrescriptionPage), findsOneWidget);
     expect(find.text('Versão 3'), findsOneWidget);
+  });
+
+  testWidgets('nomes dos alimentos vêm do catálogo, com cache', (tester) async {
+    tall(tester);
+    final catalog = _FakeCatalog();
+    final prescription = currentPrescriptionFromJson({
+      'id': 'v1',
+      'number': 1,
+      'status': 'PUBLISHED',
+      'title': null,
+      'notes': null,
+      'createdByUserId': 'u1',
+      'createdAt': '2026-11-01T10:00:00Z',
+      'publishedAt': '2026-11-02T10:00:00Z',
+      'meals': [
+        for (final id in ['m1', 'm2'])
+          {
+            'id': id,
+            'name': 'Refeição $id',
+            'mealType': 'LUNCH',
+            'order': 1,
+            'suggestedTime': null,
+            'notes': null,
+            'items': [
+              {
+                'id': 'i$id',
+                'foodId': 'f-rice',
+                'foodPortionId': null,
+                'quantity': 100,
+                'unit': 'g',
+                'order': 1,
+                'notes': null,
+                'substitutions': [],
+              },
+            ],
+          },
+      ],
+      'nutritionTargets': [],
+    });
+    await tester.pumpWidget(
+      host(prescriptions: _FakePrescriptions(prescription), catalog: catalog),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Minha prescrição'));
+    await tester.tap(find.text('Minha prescrição'));
+    await tester.pumpAndSettle();
+    expect(find.text('Arroz — 100 g'), findsNWidgets(2));
+    expect(catalog.gets, ['f-rice']);
   });
 
   testWidgets('sem prescrição o cartão mostra o estado vazio', (tester) async {
@@ -370,4 +421,21 @@ class _FakeAuth implements AuthRepository {
 
   @override
   Future<void> logout() => throw UnimplementedError();
+}
+
+class _FakeCatalog implements CatalogRepository {
+  final gets = <String>[];
+
+  @override
+  Future<FoodDetails> get(String id) async {
+    gets.add(id);
+    return FoodDetails(
+      food: FoodSummary(id: id, name: 'Arroz', origin: 'TACO'),
+      portions: const [],
+    );
+  }
+
+  @override
+  Future<CatalogPage> list(int page, {String? query}) =>
+      throw UnimplementedError();
 }

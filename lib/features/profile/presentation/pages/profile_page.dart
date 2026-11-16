@@ -5,6 +5,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/design_system/widgets/app_error_banner.dart';
 import '../../../../core/network/api_error_messages.dart';
 import '../../../auth/data/auth_api.dart';
+import '../../../catalog/data/catalog_api.dart';
+import '../../../catalog/data/catalog_repository_impl.dart';
+import '../../../catalog/domain/catalog_repository.dart';
 import '../../../auth/data/auth_repository_impl.dart';
 import '../../../auth/domain/auth_repository.dart';
 import '../../../auth/presentation/cubit/change_password_cubit.dart';
@@ -26,6 +29,7 @@ class ProfilePage extends StatefulWidget {
     this.repository,
     this.prescriptionRepository,
     this.authRepository,
+    this.catalogRepository,
     super.key,
   });
 
@@ -41,6 +45,9 @@ class ProfilePage extends StatefulWidget {
   /// Troca de senha pelo Perfil. Padrão: a partir de [dio].
   final AuthRepository? authRepository;
 
+  /// Catálogo para resolver nomes de alimentos da prescrição. Padrão: [dio].
+  final CatalogRepository? catalogRepository;
+
   @override
   State<ProfilePage> createState() => _ProfilePageState();
 }
@@ -55,6 +62,8 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _loggingOut = false;
   late final CurrentPrescriptionRepository _prescriptions;
   late final AuthRepository _auth;
+  CatalogRepository? _catalog;
+  final _foodNames = <String, String>{};
 
   @override
   void initState() {
@@ -151,12 +160,28 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  /// Nome do alimento pelo catálogo, com cache por `foodId`. Falha → `null`
+  /// (a prescrição mostra "Alimento").
+  Future<String?> _resolveFoodName(String foodId) async {
+    final cached = _foodNames[foodId];
+    if (cached != null) return cached;
+    final catalog = _catalog ??=
+        widget.catalogRepository ??
+        (widget.dio == null
+            ? null
+            : CatalogRepositoryImpl(CatalogApi(widget.dio!)));
+    if (catalog == null) return null;
+    final name = (await catalog.get(foodId)).food.name;
+    return _foodNames[foodId] = name;
+  }
+
   void _openPrescription(String? nutritionistName) {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => PrescriptionPage(
           repository: _prescriptions,
           nutritionistName: nutritionistName,
+          resolveFoodName: _resolveFoodName,
         ),
       ),
     );
