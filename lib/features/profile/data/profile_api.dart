@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../../../core/network/api_error_messages.dart';
+import '../../../core/network/api_failure.dart';
 import '../domain/patient_profile.dart';
 import '../domain/profile_repository.dart';
 
@@ -100,18 +102,6 @@ class ProfileApi implements ProfileRepository {
     );
   }
 
-  String _messageFor(DioException error) {
-    switch (error.response?.statusCode) {
-      case 400:
-        return 'Revise os dados informados e tente novamente.';
-      case 401:
-        return 'Sua sessão expirou. Saia e entre novamente.';
-      case 403:
-        return 'Você não tem acesso a estes dados.';
-      case 409:
-        return 'Seus dados mudaram. Recarregue e tente novamente.';
-      default:
-        return 'Não foi possível conectar. Verifique sua internet e tente novamente.';
-    }
-  }
+  String _messageFor(DioException error) =>
+      ApiErrorMessages.of(ApiFailure.fromDioException(error));
 }
