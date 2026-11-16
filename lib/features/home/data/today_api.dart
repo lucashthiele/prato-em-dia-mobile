@@ -1,7 +1,12 @@
 import 'package:dio/dio.dart';
 
+/// Sessão por cookies (M-01): nenhum header `Authorization` é montado aqui.
 abstract interface class TodayRemoteDataSource {
-  Future<List<dynamic>> plans();
+  /// `daily-meal-categories`: as quatro categorias do dia (M-10).
+  Future<Map<String, dynamic>> dailyMealCategories(String date);
+
+  /// `calendar-periods`: planos, prescrições e dias com execução livre.
+  Future<Map<String, dynamic>> calendarPeriods();
 
   /// Prescribed, planned and realized nutrient totals of a civil date.
   Future<Map<String, dynamic>> dailySummary(String date);
@@ -9,20 +14,13 @@ abstract interface class TodayRemoteDataSource {
   /// Active meal executions of a civil date (`yyyy-MM-dd`).
   Future<List<dynamic>> executions(String date);
 
-  /// Planned items and mode of a planned meal.
-  Future<Map<String, dynamic>> foodLog(String mealId);
-
-  Future<Map<String, dynamic>> createExecution(
-    String idempotencyKey,
-    Map<String, dynamic> payload,
-  );
-
-  Future<Map<String, dynamic>> replaceExecution(
+  Future<Map<String, dynamic>> deleteExecution(
     String id,
     int version,
     String idempotencyKey,
-    Map<String, dynamic> payload,
   );
+
+  Future<void> restoreExecution(String id, String restoreToken);
 }
 
 class TodayApi implements TodayRemoteDataSource {
@@ -31,11 +29,20 @@ class TodayApi implements TodayRemoteDataSource {
   final Dio _dio;
 
   @override
-  Future<List<dynamic>> plans() async {
-    final response = await _dio.get<List<dynamic>>(
-      '/api/v1/patients/me/weekly-plans',
+  Future<Map<String, dynamic>> dailyMealCategories(String date) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/v1/patients/me/daily-meal-categories',
+      queryParameters: {'date': date},
     );
-    return response.data ?? (throw const FormatException('Planos vazios.'));
+    return response.data ?? (throw const FormatException('Categorias vazias.'));
+  }
+
+  @override
+  Future<Map<String, dynamic>> calendarPeriods() async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/v1/patients/me/calendar-periods',
+    );
+    return response.data ?? (throw const FormatException('Calendário vazio.'));
   }
 
   @override
@@ -57,44 +64,26 @@ class TodayApi implements TodayRemoteDataSource {
   }
 
   @override
-  Future<Map<String, dynamic>> foodLog(String mealId) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '/api/v1/planned-meals/$mealId/food-log',
-    );
-    return response.data ?? (throw const FormatException('Refeição vazia.'));
-  }
-
-  @override
-  Future<Map<String, dynamic>> createExecution(
-    String idempotencyKey,
-    Map<String, dynamic> payload,
-  ) async {
-    final response = await _dio.post<Map<String, dynamic>>(
-      '/api/v1/patients/me/meal-executions',
-      data: payload,
-      options: Options(
-        contentType: Headers.jsonContentType,
-        headers: {'Idempotency-Key': idempotencyKey},
-      ),
-    );
-    return response.data ?? (throw const FormatException('Registro vazio.'));
-  }
-
-  @override
-  Future<Map<String, dynamic>> replaceExecution(
+  Future<Map<String, dynamic>> deleteExecution(
     String id,
     int version,
     String idempotencyKey,
-    Map<String, dynamic> payload,
   ) async {
-    final response = await _dio.put<Map<String, dynamic>>(
+    final response = await _dio.delete<Map<String, dynamic>>(
       '/api/v1/patients/me/meal-executions/$id',
-      data: payload,
       options: Options(
-        contentType: Headers.jsonContentType,
-        headers: {'If-Match': version, 'Idempotency-Key': idempotencyKey},
+        headers: {'If-Match': '$version', 'Idempotency-Key': idempotencyKey},
       ),
     );
-    return response.data ?? (throw const FormatException('Registro vazio.'));
+    return response.data ?? (throw const FormatException('Remoção vazia.'));
+  }
+
+  @override
+  Future<void> restoreExecution(String id, String restoreToken) async {
+    await _dio.post<Object?>(
+      '/api/v1/patients/me/meal-executions/$id/restore',
+      data: {'restoreToken': restoreToken},
+      options: Options(contentType: Headers.jsonContentType),
+    );
   }
 }

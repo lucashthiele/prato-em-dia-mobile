@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/formatting/decimal.dart';
+import '../../../../core/network/api_error_messages.dart';
 import '../../../../core/nutrition/macros.dart';
 import '../../../catalog/data/allowed_foods_repository.dart';
 import '../../../catalog/data/catalog_api.dart';
@@ -104,23 +105,42 @@ class _Item {
   );
 }
 
+/// Registra uma execução nova de uma categoria do dia (Q2, M-03). Cada
+/// confirmação cria uma execução; a categoria aceita várias e cada uma pode
+/// cobrir só parte dos itens planejados.
 class FoodLogPage extends StatefulWidget {
   const FoodLogPage({
-    required this.mealId,
     required this.mealName,
     required this.date,
     required this.dio,
+    this.mealId,
     this.mealType,
     this.plannedTime,
+    this.suggestedTime,
+    this.uncoveredPlannedItemIds,
     super.key,
   });
 
-  /// Civil date (`yyyy-MM-dd`) of the planned meal; executions are dated.
-  final String mealId, mealName, date;
+  /// Civil date (`yyyy-MM-dd`) of the day; executions are dated and the date
+  /// is not editable here (Q17).
+  final String mealName, date;
 
-  /// Category (`BREAKFAST`, `LUNCH`, `SNACK`, `DINNER`) and planned `HH:mm`
-  /// time of the meal, when the caller knows them.
-  final String? mealType, plannedTime;
+  /// Planned meal of the category; null when the day has none (`FREE`), and
+  /// the registration is then free.
+  final String? mealId;
+
+  /// Category (`BREAKFAST`, `LUNCH`, `SNACK`, `DINNER`). Required without a
+  /// planned meal.
+  final String? mealType;
+
+  /// `HH:mm` suggested by the prescription for the category (Q17). The
+  /// planned meal has no time (M-04); [plannedTime] is only a legacy fallback.
+  final String? suggestedTime, plannedTime;
+
+  /// Planned items not covered yet by the category's executions; they start
+  /// selected. Null: looked up in `daily-meal-categories`, else all planned
+  /// items start selected.
+  final List<String>? uncoveredPlannedItemIds;
 
   /// The shared [Dio] (cookie session).
   final Dio dio;
@@ -132,11 +152,9 @@ class _State extends State<FoodLogPage> {
   Dio get dio => widget.dio;
   String key = _key();
   String? lastBody;
-  // Active execution of this meal, when one was already saved.
-  Map<String, dynamic>? execution;
   _Mode? mode;
-  // Time of the execution as `HH:mm`: the saved one, else the planned one,
-  // else the current time.
+  // Time of the execution as `HH:mm`: the prescription's suggested time for
+  // the category, else the current time. Editable.
   late String time;
   List<_Item>? items;
   String? error;
@@ -146,6 +164,7 @@ class _State extends State<FoodLogPage> {
     super.initState();
     final now = TimeOfDay.now();
     time =
+        _hhmm(widget.suggestedTime) ??
         _hhmm(widget.plannedTime) ??
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     load();
@@ -200,82 +219,65 @@ class _State extends State<FoodLogPage> {
     );
   }
 
-  Future<_Item> recordedItem(
-    Map<String, dynamic> snapshot,
-    _Item? planned,
-    int index,
-  ) async {
-    final foodId = snapshot['foodId'] as String;
-    final f = planned?.food.id == foodId ? planned!.food : await food(foodId);
-    final portionId = snapshot['portionId'] as String?;
-    final unit = snapshot['unit'] as String?;
-    final portion =
-        f.portions.where((p) => p.id == portionId).firstOrNull ??
-        (portionId == null
-            ? null
-            : _Portion(portionId, unit ?? 'Porção registrada', unit));
-    return _Item(
-      id: planned?.id ?? 'recorded-$index',
-      food: f,
-      portion: portion,
-      quantity: _portionCount(snapshot, portion),
-      originalQuantity: planned?.originalQuantity ?? 0,
-      plannedId: planned?.plannedId,
-      allowedId: snapshot['allowedSubstitutionId'] as String?,
-      alternatives: planned?.alternatives ?? const [],
-      planFood: planned?.planFood,
-      planPortion: planned?.planPortion,
-    );
+  /// Planned items the category's executions did not cover yet.
+  Future<Set<String>?> uncoveredIds() async {
+    final given = widget.uncoveredPlannedItemIds;
+    if (given != null) return given.toSet();
+    try {
+      final response = await dio.get<Map<String, dynamic>>(
+        '/api/v1/patients/me/daily-meal-categories',
+        queryParameters: {'date': widget.date},
+      );
+      for (final raw in response.data!['categories'] as List) {
+        final category = raw as Map<String, dynamic>;
+        if (category['plannedMealId'] == widget.mealId) {
+          return {
+            for (final id in category['uncoveredPlannedItemIds'] as List)
+              id as String,
+          };
+        }
+      }
+    } on DioException {
+      // Without the lookup every planned item starts selected.
+    } on TypeError {
+      // Same fallback for an unexpected body.
+    }
+    return null;
   }
 
-  Future<List<_Item>> latestItems(List<_Item> planned) async {
-    final response = await dio.get<List<dynamic>>(
-      '/api/v1/patients/me/meal-executions',
-      queryParameters: {'date': widget.date},
-    );
-    final current = response.data!
-        .cast<Map<String, dynamic>>()
-        .where((e) => e['plannedMealId'] == widget.mealId)
-        .firstOrNull;
-    execution = current;
-    if (current == null) return planned;
-    time = _hhmm(current['time'] as String?) ?? time;
-    final consumed = (current['items'] as List<dynamic>)
-        .cast<Map<String, dynamic>>();
-    final byPlannedId = {
-      for (final x in consumed)
-        if (x['plannedItemId'] != null) x['plannedItemId'] as String: x,
-    };
-    final result = <_Item>[];
-    for (final x in planned) {
-      final snapshot = byPlannedId[x.plannedId];
-      // A planned item missing from the saved execution was not consumed.
-      result.add(
-        snapshot == null
-            ? x.copy(quantity: 0)
-            : await recordedItem(snapshot, x, result.length),
-      );
-    }
-    for (final x in consumed) {
-      if (x['plannedItemId'] == null) {
-        result.add(await recordedItem(x, null, result.length));
-      }
-    }
-    return result;
-  }
+  /// A new execution starts with the uncovered planned items selected; the
+  /// ones already registered start as not consumed and can be added back.
+  List<_Item> initialItems(List<_Item> planned, Set<String>? uncovered) => [
+    for (final x in planned)
+      uncovered == null || uncovered.contains(x.plannedId)
+          ? x
+          : x.copy(quantity: 0),
+  ];
 
   Future<void> load() async {
     setState(() => error = null);
     try {
+      final mealId = widget.mealId;
+      if (mealId == null) {
+        // No planned meal: only `FREE` reaches here (canRegister), and the
+        // patient picks the foods from the catalog.
+        if (mounted) {
+          setState(() {
+            mode = _Mode.free;
+            items = const [];
+          });
+        }
+        return;
+      }
       final r = await dio.get<Map<String, dynamic>>(
-        '/api/v1/planned-meals/${widget.mealId}/food-log',
+        '/api/v1/planned-meals/$mealId/food-log',
       );
       final d = r.data!;
       final list = <_Item>[];
       for (final x in d['items'] as List) {
         list.add(await item(x as Map<String, dynamic>));
       }
-      final currentItems = await latestItems(list);
+      final currentItems = initialItems(list, await uncoveredIds());
       if (mounted) {
         setState(() {
           mode = switch (d['mode']) {
@@ -451,6 +453,10 @@ class _State extends State<FoodLogPage> {
   }
 
   Future<void> save() async {
+    if (items!.every((x) => x.removed)) {
+      _snack('Inclua ao menos um alimento para registrar.');
+      return;
+    }
     if (items!.any((x) => !x.complete)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -463,7 +469,7 @@ class _State extends State<FoodLogPage> {
     try {
       final body = <String, dynamic>{
         'date': widget.date,
-        'plannedMealId': widget.mealId,
+        if (widget.mealId != null) 'plannedMealId': widget.mealId,
         'time': time,
         if (widget.mealType != null) 'mealType': widget.mealType,
         'items': [
@@ -486,29 +492,14 @@ class _State extends State<FoodLogPage> {
       final encoded = jsonEncode(body);
       if (encoded != lastBody) key = _key();
       lastBody = encoded;
-      final current = execution;
-      await (current == null
-          ? dio.post(
-              '/api/v1/patients/me/meal-executions',
-              data: body,
-              options: Options(headers: {'Idempotency-Key': key}),
-            )
-          : dio.put(
-              '/api/v1/patients/me/meal-executions/${current['id']}',
-              data: body,
-              options: Options(
-                headers: {
-                  'If-Match': current['version'],
-                  'Idempotency-Key': key,
-                },
-              ),
-            ));
+      await dio.post(
+        '/api/v1/patients/me/meal-executions',
+        data: body,
+        options: Options(headers: {'Idempotency-Key': key}),
+      );
       if (mounted) Navigator.pop(context, true);
     } on DioException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(_message(e))));
-      }
+      _snack(_message(e));
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -537,7 +528,9 @@ class _State extends State<FoodLogPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Refeição planejada',
+                    widget.mealId == null
+                        ? 'Registro livre'
+                        : 'Refeição planejada',
                     style: Theme.of(c).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(c).colorScheme.onSurfaceVariant,
                     ),
@@ -778,9 +771,10 @@ num _portionCount(Map<String, dynamic> d, _Portion? portion) {
   return size == null || size == 0 ? base : base / size;
 }
 
-String _message(DioException e) => e.response?.statusCode == 409
-    ? 'O planejamento mudou. Atualize antes de confirmar.'
-    : 'Não foi possível concluir o registro.';
+String _message(DioException e) => ApiErrorMessages.ofError(
+  e,
+  fallback: 'Não foi possível concluir o registro.',
+);
 String _key() => List.generate(
   16,
   (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
