@@ -201,7 +201,7 @@ void main() {
       expect(find.text('Versão 3'), findsOneWidget);
       expect(find.text('Publicada em 02/11/2026'), findsOneWidget);
       expect(find.text('Nutricionista: Dra. Ana'), findsOneWidget);
-      expect(find.text('Almoço · 12:30'), findsNothing); // categoria pt-BR
+      expect(find.text('Almoço · 12:30'), findsOneWidget);
       expect(find.text('Almoço'), findsWidgets);
       expect(find.text('Arroz — 150,5 g'), findsOneWidget);
       expect(find.text('• Batata — 200 g'), findsOneWidget);
