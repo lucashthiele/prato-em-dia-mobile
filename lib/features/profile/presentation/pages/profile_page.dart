@@ -2,9 +2,21 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../../core/config/app_environment.dart';
 import '../../../../core/design_system/widgets/app_error_banner.dart';
-import '../../../auth/domain/auth_session.dart';
+import '../../../../core/network/api_error_messages.dart';
+import '../../../auth/data/auth_api.dart';
+import '../../../catalog/data/catalog_api.dart';
+import '../../../catalog/data/catalog_repository_impl.dart';
+import '../../../catalog/domain/catalog_repository.dart';
+import '../../../auth/data/auth_repository_impl.dart';
+import '../../../auth/domain/auth_repository.dart';
+import '../../../auth/presentation/cubit/change_password_cubit.dart';
+import '../../../auth/presentation/pages/change_password_page.dart';
+import '../../../prescription/data/current_prescription_api.dart';
+import '../../../prescription/domain/current_prescription.dart';
+import '../../../prescription/domain/current_prescription_repository.dart';
+import '../../../prescription/presentation/pages/prescription_page.dart';
+import '../../../prescription/presentation/widgets/no_prescription_empty_state.dart';
 import '../../data/profile_api.dart';
 import '../../domain/patient_profile.dart';
 import '../../domain/profile_repository.dart';
@@ -12,19 +24,29 @@ import '../cubit/profile_cubit.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({
-    required this.session,
     required this.onLogout,
-    this.refreshSession,
+    this.dio,
     this.repository,
+    this.prescriptionRepository,
+    this.authRepository,
+    this.catalogRepository,
     super.key,
   });
 
-  final AuthSession session;
   final Future<void> Function() onLogout;
 
-  /// Supply the host's session renewal method to retry an expired bearer once.
-  final Future<AuthSession?> Function()? refreshSession;
+  /// The shared [Dio] (cookie session). Optional when a [repository] is given.
+  final Dio? dio;
   final ProfileRepository? repository;
+
+  /// Prescrição vigente (cartão "Minha prescrição"). Padrão: a partir de [dio].
+  final CurrentPrescriptionRepository? prescriptionRepository;
+
+  /// Troca de senha pelo Perfil. Padrão: a partir de [dio].
+  final AuthRepository? authRepository;
+
+  /// Catálogo para resolver nomes de alimentos da prescrição. Padrão: [dio].
+  final CatalogRepository? catalogRepository;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -38,25 +60,18 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _birthDate;
   bool _editing = false;
   bool _loggingOut = false;
+  late final CurrentPrescriptionRepository _prescriptions;
+  late final AuthRepository _auth;
+  CatalogRepository? _catalog;
+  final _foodNames = <String, String>{};
 
   @override
   void initState() {
     super.initState();
-    _cubit = ProfileCubit(
-      widget.repository ??
-          ProfileApi(
-            Dio(
-              BaseOptions(
-                baseUrl: AppEnvironment.apiBaseUrl,
-                connectTimeout: const Duration(seconds: 12),
-                receiveTimeout: const Duration(seconds: 12),
-                headers: const {'Accept': 'application/json'},
-              ),
-            ),
-            widget.session,
-            refreshSession: widget.refreshSession,
-          ),
-    )..load();
+    _prescriptions =
+        widget.prescriptionRepository ?? CurrentPrescriptionApi(widget.dio!);
+    _auth = widget.authRepository ?? AuthRepositoryImpl(AuthApi(widget.dio!));
+    _cubit = ProfileCubit(widget.repository ?? ProfileApi(widget.dio!))..load();
   }
 
   @override
@@ -113,6 +128,63 @@ class _ProfilePageState extends State<ProfilePage> {
     } finally {
       if (mounted) setState(() => _loggingOut = false);
     }
+  }
+
+  /// Troca de senha com a senha atual (Q13). O servidor revoga os refresh
+  /// tokens de todos os aparelhos e devolve cookies novos a este: o paciente
+  /// segue logado aqui; só os outros aparelhos caem.
+  Future<void> _openChangePassword() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final changed = await navigator.push<bool>(
+      MaterialPageRoute(
+        builder: (routeContext) => BlocProvider(
+          create: (_) =>
+              ChangePasswordCubit(_auth, mode: ChangePasswordMode.fromProfile),
+          child: ChangePasswordPage(
+            mode: ChangePasswordMode.fromProfile,
+            onPasswordChanged: (_) => Navigator.of(routeContext).pop(true),
+            onCancel: () => Navigator.of(routeContext).pop(false),
+          ),
+        ),
+      ),
+    );
+    if (changed == true) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Senha alterada. Os outros aparelhos foram desconectados.',
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Nome do alimento pelo catálogo, com cache por `foodId`. Falha → `null`
+  /// (a prescrição mostra "Alimento").
+  Future<String?> _resolveFoodName(String foodId) async {
+    final cached = _foodNames[foodId];
+    if (cached != null) return cached;
+    final catalog = _catalog ??=
+        widget.catalogRepository ??
+        (widget.dio == null
+            ? null
+            : CatalogRepositoryImpl(CatalogApi(widget.dio!)));
+    if (catalog == null) return null;
+    final name = (await catalog.get(foodId)).food.name;
+    return _foodNames[foodId] = name;
+  }
+
+  void _openPrescription(String? nutritionistName) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PrescriptionPage(
+          repository: _prescriptions,
+          nutritionistName: nutritionistName,
+          resolveFoodName: _resolveFoodName,
+        ),
+      ),
+    );
   }
 
   @override
@@ -255,6 +327,35 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   ),
                 const SizedBox(height: 28),
+                Text(
+                  'PRESCRIÇÃO',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                _PrescriptionCard(
+                  repository: _prescriptions,
+                  onOpen: () => _openPrescription(
+                    state.relationship?.nutritionistFullName,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  'SEGURANÇA',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.lock_reset_rounded),
+                    title: const Text('Trocar senha'),
+                    subtitle: const Text(
+                      'Ao trocar, os outros aparelhos serão desconectados.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: _openChangePassword,
+                  ),
+                ),
+                const SizedBox(height: 28),
                 OutlinedButton.icon(
                   onPressed: _loggingOut || state.isSaving ? null : _logout,
                   icon: _loggingOut
@@ -375,4 +476,87 @@ String _displayDate(String? date) {
   final parsed = DateTime.tryParse(date);
   if (parsed == null) return date;
   return '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+}
+
+/// Cartão "Minha prescrição": resumo da versão vigente ou estado vazio (Q24).
+class _PrescriptionCard extends StatefulWidget {
+  const _PrescriptionCard({required this.repository, required this.onOpen});
+
+  final CurrentPrescriptionRepository repository;
+  final VoidCallback onOpen;
+
+  @override
+  State<_PrescriptionCard> createState() => _PrescriptionCardState();
+}
+
+class _PrescriptionCardState extends State<_PrescriptionCard> {
+  bool _loading = true;
+  CurrentPrescription? _prescription;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final prescription = await widget.repository.fetchCurrent();
+      if (!mounted) return;
+      setState(() {
+        _prescription = prescription;
+        _loading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = ApiErrorMessages.ofError(
+          error,
+          fallback: 'Não foi possível carregar sua prescrição.',
+        );
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const LinearProgressIndicator(
+        semanticsLabel: 'Carregando prescrição',
+      );
+    }
+    if (_error != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppErrorBanner(message: _error!),
+          TextButton(onPressed: _load, child: const Text('Tentar novamente')),
+        ],
+      );
+    }
+    final prescription = _prescription;
+    return Card(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: const Icon(Icons.assignment_outlined),
+        title: const Text('Minha prescrição'),
+        subtitle: Text(
+          prescription == null
+              ? NoPrescriptionEmptyState.message
+              : [
+                  if (prescription.title != null) prescription.title!,
+                  'Versão ${prescription.number}',
+                ].join(' · '),
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: widget.onOpen,
+      ),
+    );
+  }
 }

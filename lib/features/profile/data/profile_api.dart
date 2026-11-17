@@ -1,21 +1,16 @@
 import 'package:dio/dio.dart';
 
-import '../../auth/domain/auth_session.dart';
+import '../../../core/network/api_error_messages.dart';
+import '../../../core/network/api_failure.dart';
 import '../domain/patient_profile.dart';
 import '../domain/profile_repository.dart';
 
 class ProfileApi implements ProfileRepository {
-  ProfileApi(this._dio, AuthSession session, {this.refreshSession})
-    : _session = session;
+  ProfileApi(this._dio);
 
   final Dio _dio;
-  AuthSession _session;
-  final Future<AuthSession?> Function()? refreshSession;
 
-  Options get _options => Options(
-    contentType: Headers.jsonContentType,
-    headers: {'Authorization': '${_session.tokenType} ${_session.accessToken}'},
-  );
+  Options get _options => Options(contentType: Headers.jsonContentType);
 
   @override
   Future<PatientProfile> getProfile() async {
@@ -88,28 +83,7 @@ class ProfileApi implements ProfileRepository {
 
   Future<Response<Map<String, dynamic>>> _request(
     Future<Response<Map<String, dynamic>>> Function(Options) call,
-  ) async {
-    try {
-      return await call(_options);
-    } on DioException catch (error) {
-      if (error.response?.statusCode != 401 || refreshSession == null) rethrow;
-      AuthSession? renewed;
-      try {
-        renewed = await refreshSession!();
-      } on Exception {
-        throw const ProfileFailure(
-          'Sua sessão expirou. Saia e entre novamente.',
-        );
-      }
-      if (renewed == null) {
-        throw const ProfileFailure(
-          'Sua sessão expirou. Saia e entre novamente.',
-        );
-      }
-      _session = renewed;
-      return call(_options);
-    }
-  }
+  ) => call(_options);
 
   PatientProfile _profileFrom(Map<String, dynamic>? data) {
     final name = data?['fullName'];
@@ -128,18 +102,6 @@ class ProfileApi implements ProfileRepository {
     );
   }
 
-  String _messageFor(DioException error) {
-    switch (error.response?.statusCode) {
-      case 400:
-        return 'Revise os dados informados e tente novamente.';
-      case 401:
-        return 'Sua sessão expirou. Saia e entre novamente.';
-      case 403:
-        return 'Você não tem acesso a estes dados.';
-      case 409:
-        return 'Seus dados mudaram. Recarregue e tente novamente.';
-      default:
-        return 'Não foi possível conectar. Verifique sua internet e tente novamente.';
-    }
-  }
+  String _messageFor(DioException error) =>
+      ApiErrorMessages.of(ApiFailure.fromDioException(error));
 }

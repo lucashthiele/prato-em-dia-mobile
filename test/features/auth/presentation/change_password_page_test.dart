@@ -21,7 +21,72 @@ void main() {
     expect(find.text('Crie sua senha pessoal'), findsOneWidget);
     expect(find.byType(TextFormField), findsNWidgets(2));
     expect(find.text('Senha inicial'), findsNothing);
+    expect(find.text('Senha atual'), findsNothing);
+    expect(find.text('Sair da conta'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('profile mode asks for the current password and sends it', (
+    tester,
+  ) async {
+    final repository = _FakeAuthRepository();
+    AuthSession? changedSession;
+    await tester.pumpWidget(
+      _appWith(
+        repository,
+        mode: ChangePasswordMode.fromProfile,
+        onPasswordChanged: (session) => changedSession = session,
+      ),
+    );
+
+    expect(find.text('Alterar senha'), findsWidgets);
+    expect(find.byType(TextFormField), findsNWidgets(3));
+    expect(find.text('Senha atual'), findsOneWidget);
+    expect(find.text('Sair da conta'), findsNothing);
+    expect(find.text('Cancelar'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'senha-antiga');
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      'minha-nova-senha',
+    );
+    await tester.enterText(
+      find.byType(TextFormField).at(2),
+      'minha-nova-senha',
+    );
+    final submit = find.widgetWithText(FilledButton, 'Alterar senha');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+
+    expect(repository.lastCurrentPassword, 'senha-antiga');
+    expect(repository.lastNewPassword, 'minha-nova-senha');
+    expect(changedSession, isNotNull);
+  });
+
+  testWidgets('profile mode does not submit without the current password', (
+    tester,
+  ) async {
+    final repository = _FakeAuthRepository();
+    await tester.pumpWidget(
+      _appWith(repository, mode: ChangePasswordMode.fromProfile),
+    );
+
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      'minha-nova-senha',
+    );
+    await tester.enterText(
+      find.byType(TextFormField).at(2),
+      'minha-nova-senha',
+    );
+    final submit = find.widgetWithText(FilledButton, 'Alterar senha');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pump();
+
+    expect(find.text('Informe a senha atual.'), findsOneWidget);
+    expect(repository.calls, 0);
   });
 
   testWidgets('validates the password rules and confirmation', (tester) async {
@@ -67,7 +132,8 @@ void main() {
     await tester.tap(submitButton);
     await tester.pumpAndSettle();
 
-    expect(repository.lastCurrentPassword, 'senha-inicial');
+    // Primeiro acesso: nenhuma senha temporária é enviada.
+    expect(repository.lastCurrentPassword, isNull);
     expect(repository.lastNewPassword, 'minha-nova-senha');
     expect(changedSession?.passwordChangeRequired, isFalse);
   });
@@ -76,14 +142,17 @@ void main() {
 Widget _appWith(
   AuthRepository repository, {
   ValueChanged<AuthSession>? onPasswordChanged,
+  ChangePasswordMode mode = ChangePasswordMode.firstAccess,
 }) {
   return MaterialApp(
     theme: AppTheme.light,
     home: BlocProvider(
-      create: (_) => ChangePasswordCubit(repository, 'senha-inicial'),
+      create: (_) => ChangePasswordCubit(repository, mode: mode),
       child: ChangePasswordPage(
+        mode: mode,
         onPasswordChanged: onPasswordChanged ?? (_) {},
-        onLogout: () async {},
+        onLogout: mode == ChangePasswordMode.firstAccess ? () async {} : null,
+        onCancel: mode == ChangePasswordMode.fromProfile ? () {} : null,
       ),
     ),
   );
@@ -92,20 +161,17 @@ Widget _appWith(
 class _FakeAuthRepository implements AuthRepository {
   String? lastCurrentPassword;
   String? lastNewPassword;
+  int calls = 0;
 
   @override
   Future<AuthSession> changePassword({
-    required String currentPassword,
+    String? currentPassword,
     required String newPassword,
   }) async {
     lastCurrentPassword = currentPassword;
     lastNewPassword = newPassword;
-    return const AuthSession(
-      accessToken: 'new-access-token',
-      tokenType: 'Bearer',
-      expiresIn: 300,
-      passwordChangeRequired: false,
-    );
+    calls++;
+    return const AuthSession(expiresIn: 300, passwordChangeRequired: false);
   }
 
   @override

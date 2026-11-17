@@ -25,14 +25,10 @@ void main() {
   ) async {
     final repository = _FakeAuthRepository();
     AuthSession? authenticatedSession;
-    String? authenticatedPassword;
     await tester.pumpWidget(
       _appWith(
         repository,
-        onAuthenticated: (session, currentPassword) {
-          authenticatedSession = session;
-          authenticatedPassword = currentPassword;
-        },
+        onAuthenticated: (session) => authenticatedSession = session,
       ),
     );
 
@@ -49,7 +45,6 @@ void main() {
     expect(repository.lastEmail, 'paciente@example.com');
     expect(repository.lastPassword, 'senha-inicial');
     expect(authenticatedSession?.passwordChangeRequired, isTrue);
-    expect(authenticatedPassword, 'senha-inicial');
   });
 }
 
@@ -61,7 +56,7 @@ Widget _appWith(
     theme: AppTheme.light,
     home: BlocProvider(
       create: (_) => LoginCubit(repository),
-      child: LoginPage(onAuthenticated: onAuthenticated ?? (_, _) {}),
+      child: LoginPage(onAuthenticated: onAuthenticated ?? (_) {}),
     ),
   );
 }
@@ -72,7 +67,7 @@ class _FakeAuthRepository implements AuthRepository {
 
   @override
   Future<AuthSession> changePassword({
-    required String currentPassword,
+    String? currentPassword,
     required String newPassword,
   }) async => throw UnimplementedError();
 
@@ -83,12 +78,7 @@ class _FakeAuthRepository implements AuthRepository {
   }) async {
     lastEmail = email;
     lastPassword = password;
-    return const AuthSession(
-      accessToken: 'access-token',
-      tokenType: 'Bearer',
-      expiresIn: 300,
-      passwordChangeRequired: true,
-    );
+    return const AuthSession(expiresIn: 300, passwordChangeRequired: true);
   }
 
   @override
