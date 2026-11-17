@@ -209,6 +209,30 @@ void main() {
     expect(find.text('12:30 · 2 itens · com substituição'), findsOneWidget);
   });
 
+  testWidgets('the Desfazer notice goes away on its own after the window', (
+    tester,
+  ) async {
+    final repository = _FakeTodayRepository(
+      categories: [
+        _cat(
+          'LUNCH',
+          CategoryState.logged,
+          executions: const [_lunchExecution],
+        ),
+      ],
+    );
+    await _pump(tester, TodayPage(repository: repository));
+
+    await tester.tap(find.byTooltip('Remover registro'));
+    await tester.pumpAndSettle();
+    expect(find.text('Desfazer'), findsOneWidget);
+
+    // A SnackBar com ação ficaria fixa por padrão e cobriria o registro.
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+    expect(find.text('Desfazer'), findsNothing);
+  });
+
   testWidgets('only calendar days are selectable', (tester) async {
     await _pump(
       tester,

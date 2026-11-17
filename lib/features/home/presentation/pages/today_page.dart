@@ -124,6 +124,9 @@ class _TodayPageState extends State<TodayPage> {
           ? null
           : category.uncoveredPlannedItemIds,
     );
+    // O aviso do Desfazer não deve acompanhar o registro e cobrir o botão de
+    // confirmar.
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     final open = widget.onRegister;
     if (open != null) {
       await open(request);
@@ -159,6 +162,9 @@ class _TodayPageState extends State<TodayPage> {
             : window > const Duration(seconds: 5)
             ? const Duration(seconds: 5)
             : window,
+        // Com ação, o Flutter deixa a SnackBar fixa por padrão; o Desfazer só
+        // vale na janela de 5 s, então ela precisa sumir sozinha.
+        persist: false,
         action: SnackBarAction(
           label: 'Desfazer',
           onPressed: () => _cubit.restore(removed),
