@@ -111,7 +111,7 @@ void main() {
       await tester.tap(find.text('Aveia'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.text('Remover'),
+        find.text('Não consumi este item'),
         200,
         scrollable: find
             .descendant(
@@ -120,7 +120,7 @@ void main() {
             )
             .first,
       );
-      await tester.tap(find.text('Remover'));
+      await tester.tap(find.text('Não consumi este item'));
       await tester.pumpAndSettle();
       expect(find.text('Não consumido'), findsOneWidget);
 
@@ -308,14 +308,29 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('restricted mode only allows editing quantity', (tester) async {
-    await open(tester, modeDio('RESTRICTED', []));
-    await tester.tap(find.text('Aveia'));
-    await tester.pumpAndSettle();
-    expect(find.text('Trocar alimento'), findsNothing);
-    expect(find.text('Remover'), findsNothing);
-    expect(find.text('Adicionar alimento do catálogo'), findsNothing);
-  });
+  testWidgets(
+    'restricted mode edits quantity or leaves a planned item out (M-03)',
+    (tester) async {
+      await open(tester, modeDio('RESTRICTED', []));
+      expect(find.text('Adicionar alimento do catálogo'), findsNothing);
+      await tester.tap(find.text('Aveia'));
+      await tester.pumpAndSettle();
+      expect(find.text('Trocar alimento'), findsNothing);
+      await tester.scrollUntilVisible(
+        find.text('Não consumi este item'),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView).last,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(find.text('Não consumi este item'));
+      await tester.pumpAndSettle();
+      expect(find.text('Não consumido'), findsOneWidget);
+    },
+  );
 
   testWidgets('substitutions-only swaps via catalog listing allowed foods', (
     tester,
@@ -329,7 +344,6 @@ void main() {
     expect(find.text('40 kcal'), findsOneWidget);
     expect(find.text('2,5 g'), findsOneWidget);
     expect(find.text('não disponível'), findsWidgets);
-    expect(find.text('Remover'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('Trocar alimento'),
       200,

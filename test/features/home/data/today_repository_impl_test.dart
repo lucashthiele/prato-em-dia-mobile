@@ -214,7 +214,7 @@ void main() {
     expect(api.restored, [('e1', 'token-1')]);
   });
 
-  test('server errors become the message of their code', () async {
+  test('a restore conflict means the undo window closed', () async {
     final api = _FakeApi()..restoreError = _error(409, 'TRACKING_CONFLICT');
     final repository = TodayRepositoryImpl(api, _Prescriptions(null));
     await expectLater(
@@ -229,10 +229,15 @@ void main() {
         isA<TodayFailure>().having(
           (f) => f.message,
           'message',
-          'O registro mudou. Atualize a tela antes de tentar de novo.',
+          TodayRepositoryImpl.restoreExpiredMessage,
         ),
       ),
     );
+  });
+
+  test('server errors become the message of their code', () async {
+    final api = _FakeApi();
+    final repository = TodayRepositoryImpl(api, _Prescriptions(null));
     api.categoriesError = _error(404, 'TRACKING_NOT_FOUND');
     await expectLater(
       repository.load(DateTime(2026, 10, 10)),

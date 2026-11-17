@@ -282,8 +282,19 @@ DayCategory? _nextCategory(TodayData data) => data.categories
     .where((c) => c.canRegister && c.state != CategoryState.logged)
     .firstOrNull;
 
-String _nextLabel(TodayData data) {
-  if (_countable(data).isEmpty) return 'Nenhuma refeição disponível';
+String _nextLabel(TodayData data, {DateTime? today}) {
+  final countable = _countable(data);
+  if (countable.isEmpty) return 'Nenhuma refeição disponível';
+  final now = today ?? DateTime.now();
+  final day = DateTime(data.date.year, data.date.month, data.date.day);
+  if (day.isBefore(DateTime(now.year, now.month, now.day))) {
+    // Dia que já passou: não há "próxima" refeição, só o resumo do que foi
+    // registrado (o app não julga o que ficou sem registro, Q15).
+    final logged = countable
+        .where((c) => c.state == CategoryState.logged)
+        .length;
+    return '$logged de ${countable.length} refeições registradas';
+  }
   final next = _nextCategory(data);
   if (next == null) return 'Todas as refeições registradas';
   final time = next.suggestedTime;

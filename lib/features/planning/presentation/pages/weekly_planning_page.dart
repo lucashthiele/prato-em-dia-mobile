@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design_system/widgets/app_error_banner.dart';
 import '../../../prescription/domain/current_prescription.dart';
 import '../../../prescription/domain/current_prescription_repository.dart';
 import '../../../prescription/presentation/widgets/no_prescription_empty_state.dart';
@@ -43,148 +44,155 @@ class _PlanningView extends StatelessWidget {
   final Future<void> Function(PlannedMeal meal)? onOpenMeal;
 
   @override
-  Widget build(BuildContext context) =>
-      BlocConsumer<WeeklyPlanningCubit, WeeklyPlanningState>(
-        listenWhen: (previous, current) =>
-            current.notice != null && previous.notice != current.notice,
-        listener: (context, state) =>
-            ScaffoldMessenger.of(context)
-                .showSnackBar(SnackBar(content: Text(state.notice!))),
-        builder: (context, state) {
-          final cubit = context.read<WeeklyPlanningCubit>();
-          return Scaffold(
-            appBar: AppBar(
-              title: Text(
-                state.selected == null ? 'Minha semana' : 'Plano semanal',
-              ),
-              leading: state.selected == null
-                  ? null
-                  : IconButton(
-                      tooltip: 'Voltar aos planos',
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      onPressed: cubit.closeDetail,
-                    ),
-              actions: [
-                IconButton(
-                  tooltip: 'Atualizar planos',
-                  onPressed: state.isLoading || state.isSaving
-                      ? null
-                      : cubit.load,
-                  icon: const Icon(Icons.refresh_rounded),
+  Widget build(
+    BuildContext context,
+  ) => BlocConsumer<WeeklyPlanningCubit, WeeklyPlanningState>(
+    listenWhen: (previous, current) =>
+        current.notice != null && previous.notice != current.notice,
+    listener: (context, state) =>
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(state.notice!))),
+    builder: (context, state) {
+      final cubit = context.read<WeeklyPlanningCubit>();
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(
+            state.selected == null ? 'Minha semana' : 'Plano semanal',
+          ),
+          leading: state.selected == null
+              ? null
+              : IconButton(
+                  tooltip: 'Voltar aos planos',
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: cubit.closeDetail,
                 ),
-              ],
+          actions: [
+            IconButton(
+              tooltip: 'Atualizar planos',
+              onPressed: state.isLoading || state.isSaving ? null : cubit.load,
+              icon: const Icon(Icons.refresh_rounded),
             ),
-            body: SafeArea(
-              bottom: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(
-                      20,
-                      28,
-                      20,
-                      32 + MediaQuery.paddingOf(context).bottom,
+          ],
+        ),
+        body: SafeArea(
+          bottom: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  28,
+                  20,
+                  32 + MediaQuery.paddingOf(context).bottom,
+                ),
+                children: [
+                  if (state.isLoading) const LinearProgressIndicator(),
+                  if (state.error != null) ...[
+                    _ErrorPanel(message: state.error!, onRetry: cubit.load),
+                    const SizedBox(height: 16),
+                  ],
+                  if (state.selected == null) ...[
+                    Text(
+                      'Sua rotina alimentar',
+                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                    children: [
-                      if (state.isLoading) const LinearProgressIndicator(),
-                      if (state.error != null) ...[
-                        _ErrorPanel(message: state.error!, onRetry: cubit.load),
-                        const SizedBox(height: 16),
-                      ],
-                      if (state.selected == null) ...[
-                        Text(
-                          'Sua rotina alimentar',
-                          style: Theme.of(context).textTheme.headlineSmall,
+                    const SizedBox(height: 8),
+                    if (!state.noPrescription) ...[
+                      Text(
+                        'Veja seus planos ou gere uma nova semana a partir da prescrição publicada.',
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: state.isLoading || state.isSaving
+                            ? null
+                            : cubit.generate,
+                        icon: state.isSaving
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.add_rounded),
+                        label: Text(
+                          state.plans.isEmpty
+                              ? 'Gerar plano semanal'
+                              : 'Regenerar plano',
                         ),
-                        const SizedBox(height: 8),
-                        if (!state.noPrescription) ...[
+                      ),
+                    ],
+                    const SizedBox(height: 28),
+                    if (!state.isLoading &&
+                        state.plans.isEmpty &&
+                        state.noPrescription)
+                      const NoPrescriptionEmptyState()
+                    else ...[
+                      Text(
+                        'PLANO ATIVO',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 12),
+                      if (!state.isLoading && state.plans.isEmpty)
+                        const _EmptyCard(
+                          message: 'Você ainda não tem um plano semanal. Gere um plano para começar.',
+                        ),
+                      for (final (index, plan) in _orderedPlans(
+                        state.plans,
+                      ).indexed) ...[
+                        if (index == 1) ...[
+                          const SizedBox(height: 12),
                           Text(
-                            'Veja seus planos ou gere uma nova semana a partir da prescrição publicada.',
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          const SizedBox(height: 20),
-                          FilledButton.icon(
-                            onPressed: state.isLoading || state.isSaving
-                                ? null
-                                : cubit.generate,
-                            icon: state.isSaving
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.add_rounded),
-                            label: Text(
-                              state.plans.isEmpty
-                                  ? 'Gerar plano semanal'
-                                  : 'Regenerar plano',
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 28),
-                        if (!state.isLoading &&
-                            state.plans.isEmpty &&
-                            state.noPrescription)
-                          const NoPrescriptionEmptyState()
-                        else ...[
-                          Text(
-                            'PLANO ATIVO',
+                            'HISTÓRICO',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                           const SizedBox(height: 12),
-                          if (!state.isLoading && state.plans.isEmpty)
-                            const _EmptyCard(
-                              message: 'Você ainda não tem um plano semanal. Gere um plano para começar.',
-                            ),
-                          for (final (index, plan) in _orderedPlans(
-                            state.plans,
-                          ).indexed) ...[
-                            if (index == 1) ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                'HISTÓRICO',
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            _PlanTile(
-                              plan: plan,
-                              enabled: !state.isLoading && !state.isSaving,
-                              onTap: () => cubit.select(plan.id),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
                         ],
-                        if (!state.noPrescription) ...[
-                          const SizedBox(height: 20),
-                          _PreferenceCard(
-                            preference: state.preference,
-                            isSaving: state.isSaving,
-                            onSave: cubit.updatePreference,
-                          ),
-                        ],
-                      ] else ...[
-                        _PlanDetail(
-                          plan: state.selected!,
-                          isSaving: state.isSaving,
-                          prescription: state.prescription,
-                          foodNames: state.foodNames,
-                          onConfirm: cubit.confirm,
-                          onDelete: () => cubit.deletePlan(state.selected!.id),
-                          onSubstitute: cubit.substituteItem,
-                          onOpenMeal: onOpenMeal,
+                        _PlanTile(
+                          plan: plan,
+                          enabled: !state.isLoading && !state.isSaving,
+                          onTap: () => cubit.select(plan.id),
                         ),
+                        const SizedBox(height: 10),
                       ],
                     ],
-                  ),
-                ),
+                    if (!state.noPrescription) ...[
+                      const SizedBox(height: 20),
+                      _PreferenceCard(
+                        preference: state.preference,
+                        isSaving: state.isSaving,
+                        onSave: cubit.updatePreference,
+                      ),
+                    ],
+                  ] else ...[
+                    if (state.prescriptionUnavailable) ...[
+                      const AppErrorBanner(
+                        message:
+                            'Não foi possível carregar as substituições '
+                            'da sua prescrição. Atualize para tentar de novo.',
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _PlanDetail(
+                      plan: state.selected!,
+                      isSaving: state.isSaving,
+                      prescription: state.prescription,
+                      foodNames: state.foodNames,
+                      onConfirm: cubit.confirm,
+                      onDelete: () => cubit.deletePlan(state.selected!.id),
+                      onSubstitute: cubit.substituteItem,
+                      onOpenMeal: onOpenMeal,
+                    ),
+                  ],
+                ],
               ),
             ),
-          );
-        },
+          ),
+        ),
       );
+    },
+  );
 }
 
 class _PlanDetail extends StatefulWidget {

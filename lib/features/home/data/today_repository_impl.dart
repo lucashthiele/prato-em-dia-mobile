@@ -99,10 +99,21 @@ class TodayRepositoryImpl implements TodayRepository {
   }, 'Não foi possível remover o registro. Tente novamente.');
 
   @override
-  Future<void> restore(RemovedExecution removed) => _guard(
-    () => _api.restoreExecution(removed.id, removed.restoreToken),
-    'Não foi possível desfazer a remoção. Tente novamente.',
-  );
+  Future<void> restore(RemovedExecution removed) => _guard(() async {
+    try {
+      await _api.restoreExecution(removed.id, removed.restoreToken);
+    } on DioException catch (error) {
+      // O servidor responde 409 genérico quando a janela de 5 s fechou (ou o
+      // token já não vale): a mensagem genérica de conflito confundia.
+      if (error.response?.statusCode == 409) {
+        throw const TodayFailure(restoreExpiredMessage);
+      }
+      rethrow;
+    }
+  }, 'Não foi possível desfazer a remoção. Tente novamente.');
+
+  static const restoreExpiredMessage =
+      'O tempo para desfazer acabou. O registro continua removido.';
 
   Future<T> _guard<T>(Future<T> Function() action, String unreadable) async {
     try {

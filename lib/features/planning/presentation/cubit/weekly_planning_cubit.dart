@@ -15,6 +15,7 @@ class WeeklyPlanningState {
     this.preference,
     this.prescription,
     this.noPrescription = false,
+    this.prescriptionUnavailable = false,
     this.foodNames = const {},
     this.isLoading = false,
     this.isSaving = false,
@@ -32,6 +33,10 @@ class WeeklyPlanningState {
   /// Verdadeiro quando o paciente não tem prescrição (Q24, A-01): some a ação
   /// de gerar e o estado vazio aparece quando não há plano.
   final bool noPrescription;
+
+  /// Verdadeiro quando a prescrição não pôde ser lida (erro de rede ou do
+  /// servidor): sem ela não há substituições, e a tela avisa o motivo.
+  final bool prescriptionUnavailable;
   final Map<String, String> foodNames;
   final bool isLoading;
   final bool isSaving;
@@ -45,6 +50,7 @@ class WeeklyPlanningState {
     WeeklyPlanningPreference? preference,
     CurrentPrescription? prescription,
     bool? noPrescription,
+    bool? prescriptionUnavailable,
     Map<String, String>? foodNames,
     bool? isLoading,
     bool? isSaving,
@@ -58,6 +64,8 @@ class WeeklyPlanningState {
         ? null
         : prescription ?? this.prescription,
     noPrescription: noPrescription ?? this.noPrescription,
+    prescriptionUnavailable:
+        prescriptionUnavailable ?? this.prescriptionUnavailable,
     foodNames: foodNames ?? this.foodNames,
     isLoading: isLoading ?? this.isLoading,
     isSaving: isSaving ?? this.isSaving,
@@ -96,6 +104,7 @@ class WeeklyPlanningCubit extends Cubit<WeeklyPlanningState> {
       }
       CurrentPrescription? prescription;
       var noPrescription = false;
+      var prescriptionUnavailable = false;
       if (_prescriptions != null) {
         try {
           prescription = await _prescriptions.fetchCurrent();
@@ -104,6 +113,7 @@ class WeeklyPlanningCubit extends Cubit<WeeklyPlanningState> {
           // Sem saber, não esconde a ação: o servidor recusa se for o caso.
           prescription = state.prescription;
           noPrescription = false;
+          prescriptionUnavailable = prescription == null;
         }
       }
       _safeEmit(
@@ -112,6 +122,7 @@ class WeeklyPlanningCubit extends Cubit<WeeklyPlanningState> {
           preference: preference,
           prescription: prescription,
           noPrescription: noPrescription,
+          prescriptionUnavailable: prescriptionUnavailable,
           isLoading: false,
           error: preferenceError,
           selected: state.selected == null

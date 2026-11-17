@@ -320,7 +320,9 @@ class _State extends State<FoodLogPage> {
                   Navigator.pop(sheet);
                   mode == _Mode.free ? swapFree(i) : swapAllowed(i);
                 },
-          onRemove: mode == _Mode.free && !x.removed
+          // Every mode can leave a planned item out: the execution then covers
+          // only part of the planned meal and the category becomes Parcial (M-03).
+          onRemove: !x.removed
               ? () {
                   Navigator.pop(sheet);
                   remove(i);
@@ -743,7 +745,11 @@ class _EditorState extends State<_Editor> {
             if (widget.onRemove != null)
               TextButton(
                 onPressed: widget.onRemove,
-                child: const Text('Remover'),
+                child: Text(
+                  widget.item.plannedId == null
+                      ? 'Remover'
+                      : 'Não consumi este item',
+                ),
               ),
           ],
         ),

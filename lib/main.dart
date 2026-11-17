@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app/theme/app_theme.dart';
 import 'core/app_outdated/app_outdated_page.dart';
@@ -128,6 +129,11 @@ class _MainAppState extends State<MainApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
+      // O app é só em pt-BR: os componentes do Material (seletor de data e de
+      // hora, diálogos) seguem o mesmo idioma das telas.
+      locale: const Locale('pt', 'BR'),
+      supportedLocales: const [Locale('pt', 'BR')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       // Telas bloqueantes ficam acima da navegação, para valer em qualquer
       // ponto do app: atualização obrigatória (426) e aceite de termos.
       builder: (context, child) => Stack(
