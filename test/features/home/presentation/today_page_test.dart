@@ -256,6 +256,31 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('reloads the day when the shell signals a return to Início', (
+    tester,
+  ) async {
+    // Antes do plano, a categoria vem bloqueada; a Semana gera o plano e o
+    // paciente volta ao Início: o dia precisa refletir o plano novo.
+    final repository = _FakeTodayRepository(
+      categories: [_cat('LUNCH', CategoryState.notLogged, canRegister: false)],
+    );
+    final reload = ValueNotifier<int>(0);
+    addTearDown(reload.dispose);
+    await _pump(
+      tester,
+      TodayPage(repository: repository, reloadSignal: reload),
+    );
+    expect(find.text('Registrar'), findsNothing);
+
+    repository.categories = [
+      _cat('LUNCH', CategoryState.notLogged, plannedMealId: 'm1', uncovered: 2),
+    ];
+    reload.value++;
+    await tester.pumpAndSettle();
+
+    expect(find.text('Registrar'), findsOneWidget);
+  });
 }
 
 class _FakeTodayRepository implements TodayRepository {

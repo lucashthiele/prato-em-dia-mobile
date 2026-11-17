@@ -35,10 +35,20 @@ const _blockedMessage = 'Seu plano não prevê alimentos para esta refeição.';
 /// Today receives the shared [Dio] (cookie session) from the app shell.
 /// [repository] and [onRegister] are optional for tests and composition.
 class TodayPage extends StatefulWidget {
-  const TodayPage({this.dio, this.repository, this.onRegister, super.key});
+  const TodayPage({
+    this.dio,
+    this.repository,
+    this.onRegister,
+    this.reloadSignal,
+    super.key,
+  });
 
   final Dio? dio;
   final TodayRepository? repository;
+
+  /// Cada notificação recarrega o dia aberto sem limpar a tela (o shell avisa
+  /// quando o paciente volta ao Início depois de mexer no plano).
+  final Listenable? reloadSignal;
 
   /// Abre o registro; por padrão empilha o [FoodLogPage].
   final Future<void> Function(RegisterRequest request)? onRegister;
@@ -63,10 +73,25 @@ class _TodayPageState extends State<TodayPage> {
                   CurrentPrescriptionApi(dio),
                 )),
     )..load();
+    widget.reloadSignal?.addListener(_reload);
+  }
+
+  void _reload() {
+    if (mounted) _cubit.load();
+  }
+
+  @override
+  void didUpdateWidget(TodayPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reloadSignal != widget.reloadSignal) {
+      oldWidget.reloadSignal?.removeListener(_reload);
+      widget.reloadSignal?.addListener(_reload);
+    }
   }
 
   @override
   void dispose() {
+    widget.reloadSignal?.removeListener(_reload);
     _cubit.close();
     super.dispose();
   }

@@ -32,6 +32,22 @@ class PatientShell extends StatefulWidget {
 class _PatientShellState extends State<PatientShell> {
   int _selectedIndex = 0;
 
+  /// Avisa o Início para recarregar quando o paciente volta a ele: a Semana
+  /// pode ter gerado, trocado ou excluído o plano, e o IndexedStack mantém o
+  /// Início montado com os dados antigos.
+  final _todayReload = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _todayReload.dispose();
+    super.dispose();
+  }
+
+  void _select(int index) {
+    if (index == 0 && _selectedIndex != 0) _todayReload.value++;
+    setState(() => _selectedIndex = index);
+  }
+
   late final List<Widget> _pages = [
     _buildTodayTab(),
     _buildWeekTab(),
@@ -39,7 +55,8 @@ class _PatientShellState extends State<PatientShell> {
   ];
 
   // --- Início -------------------------------------------------------------
-  Widget _buildTodayTab() => TodayPage(dio: widget.dio);
+  Widget _buildTodayTab() =>
+      TodayPage(dio: widget.dio, reloadSignal: _todayReload);
 
   // --- Semana -------------------------------------------------------------
   Widget _buildWeekTab() => WeeklyPlanningPage(
@@ -77,7 +94,7 @@ class _PatientShellState extends State<PatientShell> {
         ? null
         : PatientNavigationBar(
             selectedIndex: _selectedIndex,
-            onSelected: (index) => setState(() => _selectedIndex = index),
+            onSelected: _select,
           ),
   );
 }
